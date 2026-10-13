@@ -468,7 +468,7 @@ const HERO={t:'SubVitro—16',keep:[0,3,8,9,10],big:['S','V','1','6'],tag:'Му�
 const SC2=document.createElement('div');SC2.id='sc';document.body.insertBefore(SC2,O);
 const ST=$('',SC2);ST.id='stg';
 const hd=$('sv-h',ST,'','<div class="sv-t">'+[...HERO.t].map(c=>'<span>'+c+'</span>').join('')+'</div><div class="sv-s"><div class="sv-g2">'+HERO.tag+'</div><div class="sv-p">'+HERO.pill+'</div><button class="sv-th" type="button" aria-label="Сменить тему"></button></div>');
-const ch=[...hd.querySelectorAll('.sv-t span')];
+const ch=[...hd.querySelectorAll('.sv-t span')],PL=hd.querySelector('.sv-p');
 /* переключатель темы: явный выбор хранится в localStorage; пока его нет — тема устройства */
 {const R=document.documentElement,mq=matchMedia('(prefers-color-scheme:dark)'),tm=[...document.querySelectorAll('meta[name=theme-color]')],bt=hd.querySelector('.sv-th');
  const dk=()=>R.dataset.theme?R.dataset.theme=='dark':mq.matches;
@@ -489,7 +489,9 @@ CS=Math.max(sw/855,sh/547)*1.09;OX=(sw-855*CS)/2;OY=(sh-547*CS)/2;[SB,SF].forEac
 W.style.transform=`translate(${vw/2}px,${lr(cy0,cyF,e)}px) rotate(${(3.5*Math.sin(Math.PI*e)).toFixed(2)}deg) scale(${lr(k0,kF,e)}) translate(${-sw/2}px,${-sh/2}px)`;
 const c=sm(cl((p-.2)/.14));ch.forEach((s,i)=>{if(HERO.keep.includes(i)||!s.nw)return;s.style.width=s.nw*(1-c)+'px';s.style.opacity=1-c});
 const T=(mob?.8765:.965)*vh+.2*fs+24;lt.forEach((s,i)=>{s.style.transform=`translateY(${-T*sm(cl((p-[.02,.06,.1,.14][i])/.34))}px)`});
-const u=sm(cl((p-.35)/.4));LN.style.transform=`translateY(${-u*vh*.4}px)`;LN.style.opacity=hd.firstChild.nextSibling.firstChild.style.opacity=1-u;hd.querySelector('.sv-p').style.opacity=1-sm(cl((p-.5)/.3));
+const u=sm(cl((p-.35)/.4));LN.style.transform=`translateY(${-u*vh*.4}px)`;LN.style.opacity=1-u;
+/* «Листайте вниз» сворачивается вместе с буквами названия, девиз съезжает вправо к переключателю темы */
+if(PL.nw){const q=PL.style;q.width=(PL.nw*(1-c)).toFixed(1)+'px';q.opacity=(1-c).toFixed(3);q.paddingLeft=q.paddingRight=(PL.px*(1-c)).toFixed(2)+'px';q.borderWidth=c>.98?'0':'';q.marginLeft=(-PL.gp*c).toFixed(1)+'px'}
 locked=LK=p<.995;W.style.pointerEvents=locked?'none':''}
 function calc(force){const w=innerWidth;if(w!==vwL){vwL=w;vhM=0}vhM=Math.max(vhM,innerHeight);const m0=w<640||(w<900&&w/innerHeight<.85);vw=w;vh=m0?vhM:innerHeight;mob=m0;const key=vw+'|'+vh+'|'+mob;if(!force&&key===key0)return;key0=key;
 let kD=Math.min(1.7,(vw-16)/1000,(vh-24)/700);if(kD<.6)kD=Math.min(1.7,(vw-16)/1000);if(!mob&&vh<520)kD=Math.max(.3,Math.min(1.7,(vw-16)/1000,(vh-80)/560));
@@ -498,7 +500,9 @@ SH=Math.max(vh,cyF+ph*kF/2+24);RG=Math.round(vh*1.35);fs=Math.min(.346*vw,(mob?.
 ST.style.height=SH+'px';SC2.style.height=SH+RG+'px';ST.style.setProperty('--fs',fs+'px');
 rows.forEach((r,i)=>r.style.top=(mob?[.29,.478,.671]:[.22,.43,.63])[i]*vh+'px');tag.style.top=.29*vh+11+'px';
 grp.forEach(g=>g.style.top=((mob?.8765:.965)*vh-.864*fs)+'px');
-ch.forEach(s=>{s.style.width='';s.nw=s.getBoundingClientRect().width});render(true);requestAnimationFrame(()=>render(true))}
+ch.forEach(s=>{s.style.width='';s.nw=s.getBoundingClientRect().width});
+{const q=PL.style;q.width=q.paddingLeft=q.paddingRight=q.marginLeft=q.borderWidth='';const cs=getComputedStyle(PL);PL.nw=PL.getBoundingClientRect().width;PL.px=parseFloat(cs.paddingLeft);PL.gp=parseFloat(getComputedStyle(PL.parentNode).columnGap)||0}
+render(true);requestAnimationFrame(()=>render(true))}
 let tk=0;addEventListener('scroll',()=>{if(!tk)tk=requestAnimationFrame(()=>{tk=0;render()})},{passive:true});
 addEventListener('resize',()=>calc());addEventListener('orientationchange',()=>{setTimeout(()=>calc(),200);setTimeout(()=>calc(),700)});
 /* пока синтезатор не приблизился, клавиши компьютера не играют */

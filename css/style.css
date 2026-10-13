@@ -60,7 +60,7 @@ body{margin:0;background:radial-gradient(circle at 50% 30%,var(--bg1),var(--bg2)
 .sv-h{position:absolute;left:16px;right:16px;top:14px;display:flex;justify-content:space-between;align-items:center;z-index:5;pointer-events:none}
 .sv-t{font:400 clamp(32px,4.5vw,104px)/1 'Inter Tight','Helvetica Neue',Arial,sans-serif;letter-spacing:-.03em;white-space:nowrap}
 .sv-t span{display:inline-block;overflow:hidden;vertical-align:top;white-space:pre}
-.sv-p{box-sizing:border-box;height:27px;display:flex;align-items:center;font:400 11px/1 'IBM Plex Mono',ui-monospace,monospace;text-transform:uppercase;border:1px solid currentColor;border-radius:99px;padding:0 12px;white-space:nowrap}
+.sv-p{box-sizing:border-box;height:27px;display:flex;align-items:center;overflow:hidden;justify-content:center;font:400 11px/1 'IBM Plex Mono',ui-monospace,monospace;text-transform:uppercase;border:1px solid currentColor;border-radius:99px;padding:0 12px;white-space:nowrap}
 .sv-n,.sv-b{position:absolute;inset:0;pointer-events:none;z-index:1}.sv-b{z-index:2}
 .sv-r{position:absolute;left:11px;right:11px;height:9px;margin-top:-4px;display:flex;align-items:center;gap:9px}
 .sv-r b{flex:1;height:1px;background:currentColor}
