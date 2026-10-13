@@ -1,11 +1,11 @@
 /* ---- экран загрузки: счётчик идёт по реальной загрузке шрифтов и картинок, но не быстрее ~2.4 с; на 100 штора уезжает вверх ---- */
 const LD=(()=>{const el=document.getElementById('ld');if(!el)return{imgs(){}};
-const nu=el.querySelector('.ld-n'),root=document.documentElement,rm=matchMedia('(prefers-reduced-motion:reduce)').matches,rn=(a,b)=>a+Math.random()*(b-a);
+const nu=el.querySelector('.ld-n'),root=document.documentElement,rn=(a,b)=>a+Math.random()*(b-a);
 let pr=.05,shown=0,nxt=0,end=0;
 /* штора уезжает через transform (на видеокарте, без перерасчёта вёрстки) вместе с надписями: «100» и название поднимаются вместе с ней */
 const wi=document.createElement('div');wi.className='ld-i';while(el.firstChild)wi.appendChild(el.firstChild);el.appendChild(wi);
 const fin=()=>{if(end)return;end=1;const gone=()=>{root.classList.remove('ld');el.remove()};
- if(rm||!el.animate)return gone();
+ if(!el.animate){el.style.transition='transform 1.1s cubic-bezier(.76,0,.18,1)';requestAnimationFrame(()=>{el.style.transform='translateY(-100%)';setTimeout(gone,1200)});return}
  /* дать странице спокойно дорисовать первый кадр под шторой, и только потом начинать движение */
  requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(()=>{
   const o={duration:1100,easing:'cubic-bezier(.76,0,.18,1)',fill:'forwards'};
@@ -15,7 +15,7 @@ Promise.all(['400 32px "Inter Tight"','400 13px "IBM Plex Mono"','500 9px "IBM P
 setTimeout(show,700);setTimeout(fin,9000);
 (function tk(t){if(end)return;
  if(t>=nxt){const goal=Math.round(Math.min(pr,Math.min(1,t/2400))*100);
-  if(goal>shown){shown=Math.min(goal,shown+Math.max(1,Math.round((goal-shown)*rn(.45,1))));nu.textContent=shown;if(shown>=100){setTimeout(fin,rm?0:260);return}}
+  if(goal>shown){shown=Math.min(goal,shown+Math.max(1,Math.round((goal-shown)*rn(.45,1))));nu.textContent=shown;if(shown>=100){setTimeout(fin,260);return}}
   nxt=t+rn(110,230)}
  requestAnimationFrame(tk)})(0);
 return{imgs(a){let k=0;pr=Math.max(pr,.3);a.forEach(s=>{const i=new Image();i.onload=i.onerror=()=>{if(++k==a.length){pr=.9;(window.BAKED_||Promise.resolve()).then(()=>pr=1)}else pr+=.62/a.length};i.src=s})}}})();
@@ -68,38 +68,64 @@ let PI=0;{const c=SQ.get('c');let last=-1;try{last=+localStorage.getItem('sv-com
 document.documentElement.dataset.comp=PN[PI]+':'+SEED;
 const dim=(k,L)=>{const h=L/Math.max(1,AR[k]);return[h*AR[k],h]};
 /* резкость/тень/яркость по глубине z (0 — у самого стекла, 1 — на плите) */
-const fl2=(z,s)=>{const q=1-z,f=v=>(v*s).toFixed(1);return`drop-shadow(${f(3+q*20)}px ${f(5+q*28)}px ${f(3+q*16)}px #000b) blur(${f(.35+8.5*Math.pow(z,1.4))}px) brightness(${(.72+.4*(1-z)).toFixed(2)}) contrast(${(.8+.2*(1-z)).toFixed(2)}) saturate(.9)`},flt=z=>fl2(z,1);
+const fl2=(z,s)=>{const q=1-z,f=v=>(v*s).toFixed(1);return`drop-shadow(${f(3+q*20)}px ${f(5+q*28)}px ${f(3+q*16)}px #000b) blur(${f(.35+8.5*Math.pow(z,1.4))}px) brightness(${(.72+.4*(1-z)).toFixed(2)}) contrast(${(.8+.2*(1-z)).toFixed(2)}) saturate(.9)`};
 
-/* ---- запечённое размытие и тени ----
-   Живой CSS-фильтр на ~80 слоях видеокарта пересчитывает КАЖДЫЙ кадр — отсюда лаги и глитчи на слабых картах/4K.
-   Поэтому каждый предмет один раз «печётся» в картинку (canvas) с тем же фильтром: в покое и в фокусе (когда играет его класс).
-   Дальше при движении видеокарта только двигает готовые текстуры, а переход покой↔фокус — плавное перекрытие двух картинок.
-   Если браузер не умеет canvas-фильтры (старый Safari) или в адресе ?live — работает прежний живой фильтр. */
-const CF=(()=>{try{const c=document.createElement('canvas').getContext('2d');return!!c&&'filter' in c}catch(e){return false}})(),LIVE=!CF||SQ.has('live');
+/* ---- предметы под стеклом: запечённые спрайты на двух холстах ----
+   Раньше каждый из ~80 предметов был отдельным слоем с живым CSS-фильтром (размытие+тень), и видеокарта
+   пересчитывала их каждый кадр — отсюда лаги, глитчи и вылеты на телефонах (кончалась видеопамять).
+   Теперь каждый предмет один раз «печётся» в картинку с тем же фильтром (в покое, в середине и в фокусе),
+   а каждый кадр все предметы рисуются на ОДНОМ холсте под матовым слоем и одном над ним.
+   Где браузер не умеет canvas-фильтры (Safari), размытие и тень считаются вручную тем же рецептом. */
 const IM={};let BK;const BAKED=new Promise(r=>BK=r);
 const IMGS=Promise.all(KEYS.map(k=>new Promise(r=>{const i=new Image();i.onload=i.onerror=r;i.src=PH[k];IM[k]=i})));
-const BQ=[];let bqRun=0,bqDone=0;
-/* запекает один уровень (z) предмета: холст с полями под тень и размытие, центр — в центре предмета */
-function bakeLv(b,lv){const t=b.t,z=lv==1?b.zf:lv==2?(b.zr+b.zf)/2:b.zr,q=1-z,bl=.35+8.5*Math.pow(z,1.4),sb=3+q*16,off=Math.max(3+q*20,5+q*28),M=Math.ceil(off+2.4*Math.hypot(sb,bl))+2,
+const CF=!SQ.has('jsblur')&&(()=>{try{const c=document.createElement('canvas');c.width=c.height=9;const x=c.getContext('2d');x.filter='blur(2px)';x.fillStyle='#fff';x.fillRect(4,4,1,1);return x.getImageData(1,4,1,1).data[3]>0}catch(e){return false}})();
+/* гауссово размытие тремя проходами «коробкой» (ch каналов на пиксель, премультиплицированные float) */
+function gblur(a,w,h,s,ch){if(s<.35)return;const n=3,wi=Math.sqrt(12*s*s/n+1)|0,wl=wi%2?wi:wi-1,m=Math.round((12*s*s-n*wl*wl-4*n*wl-3*n)/(-4*wl-4)),t=new Float32Array(a.length);
+ for(let i=0;i<n;i++){const r=((i<m?wl:wl+2)-1)/2;if(r<1)continue;bxp(a,t,w,h,r,1,ch);bxp(t,a,w,h,r,0,ch)}}
+function bxp(s,d,w,h,r,hz,ch){const L=hz?w:h,N=hz?h:w,st=hz?ch:ch*w,ln=hz?ch*w:ch,iv=1/(r+r+1),last=(L-1)*st;
+ for(let j=0;j<N;j++){const o=j*ln;for(let c=0;c<ch;c++){const b=o+c,f=s[b],e=s[b+last];let acc=f*(r+1);for(let k=1;k<=r;k++)acc+=s[b+Math.min(L-1,k)*st];
+  for(let i=0,p=b;i<L;i++,p+=st){d[p]=acc*iv;acc+=(i+r+1<L?s[b+(i+r+1)*st]:e)-(i-r>=0?s[b+(i-r)*st]:f)}}}}
+/* тот же рецепт, что у CSS-фильтра fl2: тень (drop-shadow) → размытие → яркость → контраст → насыщенность.
+   Тень мягкая, поэтому считается в уменьшенном в 4 раза виде и потом растягивается — это в десятки раз быстрее */
+function jsFilter(x,pw,ph,z,s){const q=1-z,id=x.getImageData(0,0,pw,ph),u=id.data,N=pw*ph,A=new Float32Array(N*4),ox=(3+q*20)*s,oy=(5+q*28)*s,ss=(3+q*16)*s/2;
+ for(let i=0,k=0;i<N;i++,k+=4){const al=u[k+3]/255,f=al/255;A[k]=u[k]*f;A[k+1]=u[k+1]*f;A[k+2]=u[k+2]*f;A[k+3]=al}
+ const F=ss>6?4:ss>2.5?2:1,sw=Math.ceil(pw/F),sh=Math.ceil(ph/F),S=new Float32Array(sw*sh);
+ for(let y=0;y<ph;y++){const ry=(y/F|0)*sw;for(let xx=0;xx<pw;xx++)S[ry+(xx/F|0)]+=A[(y*pw+xx)*4+3]}
+ const nf=.733/(F*F);for(let i=0;i<S.length;i++)S[i]*=nf;gblur(S,sw,sh,ss/F,1);
+ for(let y=0;y<ph;y++){const fy=(y-oy)/F-.5,y0=Math.floor(fy),ty=fy-y0;for(let xx=0;xx<pw;xx++){const fx=(xx-ox)/F-.5,x0=Math.floor(fx),tx=fx-x0;
+  const g=(X,Y)=>X<0||Y<0||X>=sw||Y>=sh?0:S[Y*sw+X],sa=(g(x0,y0)*(1-tx)+g(x0+1,y0)*tx)*(1-ty)+(g(x0,y0+1)*(1-tx)+g(x0+1,y0+1)*tx)*ty;
+  if(sa>0){const k=(y*pw+xx)*4;A[k+3]+=sa*(1-A[k+3])}}}
+ gblur(A,pw,ph,(.35+8.5*Math.pow(z,1.4))*s,4);
+ const br=.72+.4*(1-z),ct=.8+.2*(1-z),sa=.9,m=[.2126+.7874*sa,.7152-.7152*sa,.0722-.0722*sa,.2126-.2126*sa,.7152+.2848*sa,.0722-.0722*sa,.2126-.2126*sa,.7152-.7152*sa,.0722+.9278*sa];
+ for(let i=0,k=0;i<N;i++,k+=4){const al=A[k+3];if(al<1e-4){u[k+3]=0;continue}
+  let r=Math.min(1,A[k]/al*br),g=Math.min(1,A[k+1]/al*br),b=Math.min(1,A[k+2]/al*br);
+  r=(r-.5)*ct+.5;g=(g-.5)*ct+.5;b=(b-.5)*ct+.5;
+  u[k]=(m[0]*r+m[1]*g+m[2]*b)*255;u[k+1]=(m[3]*r+m[4]*g+m[5]*b)*255;u[k+2]=(m[6]*r+m[7]*g+m[8]*b)*255;u[k+3]=Math.min(1,al)*255}
+ x.putImageData(id,0,0)}
+const BQ=[];let bqRun=0;
+const LZ=(b,lv)=>lv==1?b.zf:lv==2?(b.zr+b.zf)/2:b.zr;
+/* запекает один уровень (z) предмета: спрайт с полями под тень и размытие, центр — в центре предмета */
+function bakeLv(b,lv){const t=b.t,z=LZ(b,lv),q=1-z,bl=.35+8.5*Math.pow(z,1.4),sb=3+q*16,off=Math.max(3+q*20,5+q*28),M=Math.ceil(off+2.4*Math.hypot(sb/2,bl))+2,
  th=t.r*DG,c=Math.abs(Math.cos(th)),sn=Math.abs(Math.sin(th)),W=t.w*c+t.h*sn+2*M,H=t.w*sn+t.h*c+2*M,
- qb=Math.min(Math.min(3,DPR*Math.max(1,KSC)),2.5),sc=Math.max(.25,Math.min(qb,1.6/bl)),pw=Math.max(2,Math.round(W*sc)),ph=Math.max(2,Math.round(H*sc));
- if(pw*ph>4.2e6)return null;
- const cv=document.createElement('canvas');cv.width=pw;cv.height=ph;const x=cv.getContext('2d');
- x.imageSmoothingQuality='high';x.filter=fl2(z,sc);x.setTransform(sc,0,0,sc,pw/2,ph/2);x.rotate(th);if(t.fl)x.scale(-1,1);
- x.drawImage(IM[t.k],-t.w/2,-t.h/2,t.w,t.h);
- cv.style.cssText=`position:absolute;left:${((t.w-W)/2).toFixed(1)}px;top:${((t.h-H)/2).toFixed(1)}px;width:${W.toFixed(1)}px;height:${H.toFixed(1)}px;pointer-events:none`;return cv}
-function bakePump(){bqRun=0;const t0=performance.now();
- while(BQ.length&&performance.now()-t0<5){const[b,lv]=BQ.shift();if(!b.e.isConnected||b.cv[lv]!==undefined)continue;
-  const c=bakeLv(b,lv);b.cv[lv]=c||false;if(c){b.i.appendChild(c);if(lv==0)lvl(b,b.tw||0);else lvl(b,b.tw)}}
- if(BQ.length){bqRun=1;requestAnimationFrame(bakePump)}else BK()}
-function bakeQ(b,lv,first){if(b.cv[lv]!==undefined||b.qd[lv])return;b.qd[lv]=1;first?BQ.unshift([b,lv]):BQ.push([b,lv]);if(!bqRun){bqRun=1;requestAnimationFrame(bakePump)}}
-/* t: 0 — предмет в покое (размыт), 1 — в фокусе (резкий, у стекла); три запечённых уровня: покой, середина, фокус */
-function lvl(b,t){b.tw=t;const A=b.cv[0],B=b.cv[1],M=b.cv[2];if(t>0&&B===undefined)bakeQ(b,1);if(t>.1&&B&&M===undefined)bakeQ(b,2);if(!A)return;
- const so=(c,o)=>{if(!c)return;c.style.opacity=o.toFixed(2);c.style.visibility=o<.01?'hidden':'visible'};
- if(!B){so(A,1);return}
- if(!M){so(A,t>.995?0:1-t*t);so(B,t);return}
- if(t<.5){const u=t*2;so(A,1-u*u);so(M,u);so(B,0)}else{const u=(t-.5)*2;so(A,0);so(M,1-u*u);so(B,u)}}
-
+ /* под матовым стеклом (своё размытие 3.5px) хватает разрешения ~1 css-пикселя; над ним — резче */
+ qmax=b.lay?Math.min(COARSE?1.5:2,RS):Math.min(COARSE?.9:1.2,RS),sc=Math.max(.2,Math.min(qmax,(CF?1.6:1.3)/bl)),pw=Math.max(2,Math.round(W*sc)),ph=Math.max(2,Math.round(H*sc));
+ if(pw*ph>2.2e6)return null;
+ const cv=document.createElement('canvas');cv.width=pw;cv.height=ph;const x=cv.getContext('2d',CF?undefined:{willReadFrequently:true});
+ x.imageSmoothingQuality='high';if(CF)x.filter=fl2(z,sc);x.setTransform(sc,0,0,sc,pw/2,ph/2);x.rotate(th);if(t.fl)x.scale(-1,1);
+ x.drawImage(IM[t.k],-t.w/2,-t.h/2,t.w,t.h);if(!CF){x.setTransform(1,0,0,1,0,0);jsFilter(x,pw,ph,z,sc)}
+ const sp={img:cv,W,H};
+ /* готовую картинку переводим в ImageBitmap — холст освобождается (на iPhone у холстов жёсткий лимит памяти) */
+ if(window.createImageBitmap)createImageBitmap(cv).then(bm=>{sp.img=bm;cv.width=cv.height=0}).catch(()=>0);
+ return sp}
+/* печём порциями между кадрами: пока висит шторка — крупными (никто не смотрит), потом — мелкими, чтобы не дёргать анимацию */
+function bakePump(){bqRun=0;const t0=performance.now(),lim=document.getElementById('ld')?24:6;let n=0;
+ while(BQ.length&&performance.now()-t0<lim){const[b,lv]=BQ.shift();if(!b.on||b.sp[lv]!==undefined)continue;b.sp[lv]=bakeLv(b,lv)||false;n++}
+ if(n)REQ();if(BQ.length){bqRun=1;setTimeout(bakePump,0)}else BK()}
+function bakeQ(b,lv){if(b.sp[lv]!==undefined||b.qd[lv])return;b.qd[lv]=1;BQ.push([b,lv]);if(!bqRun){bqRun=1;setTimeout(bakePump,0)}}
+/* t: 0 — предмет в покое (размыт), 1 — в фокусе (резкий, у стекла): какие уровни рисовать и с какой прозрачностью */
+function wts(b){const t=b.tw,A=b.sp[0],B=b.sp[1],M=b.sp[2];if(t>0&&B===undefined)bakeQ(b,1);if(t>.1&&B&&M===undefined)bakeQ(b,2);
+ if(!A)return[];if(!B||t<.004)return[[A,1]];if(!M)return[[A,1-t*t],[B,t]];
+ if(t<.5){const u=t*2;return[[A,1-u*u],[M,u]]}const u=(t-.5)*2;return[[M,1-u*u],[B,u]]}
 
 /* раскладка в системе координат с центром в середине стекла; A,B — полуразмеры видимой области + запас на сдвиг при наклоне */
 function compose(fw,fh){
@@ -193,30 +219,6 @@ it.forEach(t=>{if(!t.gi&&t.d<thr)t.sh=1;t.z=t.gi?rn(.93,.98):t.sh?rn(.08,.34):.4
  if(!t.gi&&!t.sh&&PN[PI]!='mosaic')t.r+=R()<.3?rn(-28,28):rn(-9,9)});
 return it}
 
-/* тела для физики: масса, положение, угол, высота над платой, «нагрузка» класса */
-const mkBD=l=>l.map(e=>({e,i:e.firstChild,z0:+e.dataset.z,px:0,py:0,m:Math.max(.5,parseFloat(e.style.width)*parseFloat(e.style.height)/42000),x:0,y:0,vx:0,vy:0,a:0,o:0,h:0,vh:0,fh:-9,L:0,cl:CL[e.dataset.k],cv:[],qd:[],tw:0,tq:-1}));
-let BD=[];
-/* строит (или перестраивает при смене ПК↔телефон) все предметы под стеклом; обёртка держит тень и фокус, картинка — только поворот */
-/* бюджет видеопамяти: каждый слой с фильтром = своя текстура (площадь × DPR² × 4 байта). На телефонах она быстро кончается —
-   система убивает вкладку. Если сцена не влезает, сначала ужимаем гигантов, потом убираем самые дальние (и самые размытые) предметы */
-let KSC=1;const DPR=Math.min(3,window.devicePixelRatio||1),COARSE=matchMedia('(pointer:coarse)').matches,VRAM=()=>(COARSE?72:150)*1e6/(4*Math.pow(DPR*Math.max(1,KSC),2));
-function fit(l,fw,fh){const ar=t=>{const[w,h]=dim(t.k,t.L*(1.07-.13*t.z));return Math.min(w,fw+120)*Math.min(h,fh+120)},tot=()=>l.reduce((s,t)=>s+ar(t),0);
- const V=VRAM()*(LIVE?1:2.2);if(tot()<=V)return l;
- l.forEach(t=>{if(t.gi)t.L*=.72});
- const o=l.filter(t=>!t.gi).sort((a,b)=>b.z-a.z);
- while(tot()>V&&o.length>12){const t=o.shift();l.splice(l.indexOf(t),1)}
- return l}
-function buildScene(fw,fh){[SB,SF].forEach(c=>{while(c.firstChild)c.removeChild(c.firstChild)});
- const ts=[],els=fit(compose(fw,fh),fw,fh).sort((a,b)=>b.z-a.z).map(t=>{const[w,h]=dim(t.k,t.L*(1.07-.13*t.z)),e=document.createElement('div');
-  e.dataset.k=t.k;e.dataset.z=t.z;e.style.cssText=`position:absolute;left:${(427.5+t.x-w/2).toFixed(1)}px;top:${(273.5+t.y-h/2).toFixed(1)}px;width:${w.toFixed(1)}px;height:${h.toFixed(1)}px;will-change:transform;pointer-events:none`;
-  const im=document.createElement(LIVE?'img':'div');
-  if(LIVE){im.src=PH[t.k];im.alt='';im.draggable=false;im.decoding='async';im.style.cssText=`position:absolute;left:0;top:0;width:100%;height:100%;transform:rotate(${t.r.toFixed(2)}deg)${t.fl?' scaleX(-1)':''}`}
-  else im.style.cssText='position:absolute;inset:0';
-  e.appendChild(im);(t.z<.4?SF:SB).appendChild(e);ts.push({k:t.k,r:t.r,fl:t.fl,w,h});return e});
- BD=mkBD(els);
- BD.forEach((b,i)=>{b.t=ts[i];b.zr=Math.max(.03,b.z0);b.zf=Math.max(.03,b.zr*.18);if(b.zr-b.zf<.05)b.cv[1]=b.cv[2]=false;
-  if(LIVE){b.e.style.filter=RM?`drop-shadow(4px 8px 5px #000b) blur(${(.35+8.5*Math.pow(b.z0,1.4)).toFixed(1)}px) brightness(${(.72+.38*(1-b.z0)).toFixed(2)})`:flt(b.zr);b.fh=0;b.fq=-1}});
- if(!LIVE)IMGS.then(()=>{BD.forEach(b=>bakeQ(b,0))})}
 $('',GL,'position:absolute;inset:0;background:radial-gradient(ellipse at 50% 45%,#0000 30%,#000a 100%);pointer-events:none');
 const farW=$('',GL,'position:absolute;left:0;top:0;width:855px;height:547px;transform-origin:0 0;will-change:transform');
 const rn=(a,b)=>a+Math.random()*(b-a),pk2=['#c0392b','#2e7d4f','#e0a82e','#3a6ea5','#999'];
@@ -237,6 +239,32 @@ gl("background:linear-gradient(135deg,#ffffff8c,#ffffff6b),radial-gradient(ellip
 gl("background:"+NZ+";opacity:.55;mix-blend-mode:soft-light");
 gl("background:"+NZ2+";opacity:.5;mix-blend-mode:soft-light");
 const SF=mkc();
+/* тела для физики: масса, положение, угол, высота над платой, «нагрузка» класса */
+let BD=[];
+/* бюджет памяти под спрайты (на телефоне скромнее): если сцена не влезает — ужимаем гигантов, потом убираем самые дальние */
+let KSC=1,RS=1,X0=0,Y0=0;const DPR=Math.min(3,window.devicePixelRatio||1),COARSE=matchMedia('(pointer:coarse)').matches;
+function fit(l,fw,fh){const ar=t=>{const[w,h]=dim(t.k,t.L*(1.07-.13*t.z));return Math.min(w,fw+120)*Math.min(h,fh+120)},tot=()=>l.reduce((s,t)=>s+ar(t),0);
+ const V=(COARSE?40:60)*fw*fh;if(tot()<=V)return l;
+ l.forEach(t=>{if(t.gi)t.L*=.72});
+ const o=l.filter(t=>!t.gi).sort((a,b)=>b.z-a.z);
+ while(tot()>V&&o.length>12){const t=o.shift();l.splice(l.indexOf(t),1)}
+ return l}
+/* два холста: SB — под матовым слоем, SF — над ним; размер = видимая часть стекла, разрешение — под экран, но с потолком */
+const CV=[SB,SF].map(p=>{const c=document.createElement('canvas');c.style.cssText='position:absolute;pointer-events:none';p.appendChild(c);return{c,x:c.getContext('2d')}});
+function buildScene(fw,fh){BD.forEach(b=>b.on=0);BQ.length=0;
+ RS=Math.min(DPR*Math.max(1,KSC)*CS,Math.sqrt((COARSE?2.6e6:4.4e6)/(fw*fh)));X0=427.5-fw/2;Y0=273.5-fh/2;
+ CV.forEach(({c})=>{c.width=Math.round(fw*RS);c.height=Math.round(fh*RS);c.style.left=X0+'px';c.style.top=Y0+'px';c.style.width=fw+'px';c.style.height=fh+'px'});
+ BD=fit(compose(fw,fh),fw,fh).sort((a,b)=>b.z-a.z).map(t=>{const[w,h]=dim(t.k,t.L*(1.07-.13*t.z)),zr=Math.max(.03,t.z),zf=Math.max(.03,zr*.18);
+  return{k:t.k,t:{k:t.k,r:t.r,fl:t.fl,w,h},lay:t.z<.4?1:0,cx:427.5+t.x,cy:273.5+t.y,z0:t.z,zr,zf,m:Math.max(.5,w*h/42000),cl:CL[t.k],on:1,
+   px:0,py:0,x:0,y:0,vx:0,vy:0,a:0,o:0,h:0,vh:0,L:0,sk:1,tw:0,sp:zr-zf<.05?[undefined,false,false]:[],qd:[]}});
+ IMGS.then(()=>{BD.forEach(b=>bakeQ(b,0));REQ()})}
+/* кадр: очищаем оба холста и рисуем предметы от дальних к ближним */
+function draw(){CV.forEach(({c,x})=>{x.setTransform(1,0,0,1,0,0);x.clearRect(0,0,c.width,c.height)});
+ for(const b of BD){const w=wts(b);if(!w.length)continue;const x=CV[b.lay].x;
+  x.setTransform(RS,0,0,RS,-X0*RS,-Y0*RS);x.translate(b.cx+b.x+b.px,b.cy+b.y+b.py);if(b.sk!==1)x.scale(b.sk,b.sk);if(b.a)x.rotate(b.a*DG);
+  for(const[s,al]of w)if(al>.01){x.globalAlpha=al;x.drawImage(s.img,-s.W/2,-s.H/2,s.W,s.H)}x.globalAlpha=1}}
+let DQ=0;const REQ=()=>{if(!DQ){DQ=1;requestAnimationFrame(()=>{DQ=0;draw()})}};
+
 gl("background:linear-gradient(115deg,#fff0 calc(var(--gx,38%) - 14%),#ffffff4d var(--gx,38%),#fff0 calc(var(--gx,38%) + 14%),#ffffff1c 72%,#fff0 85%),radial-gradient(ellipse at var(--gx,38%) 0%,#ffffff40,#fff0 55%),rgba(255,255,255,.1)");
 gl("background:"+NZ+";opacity:.3;mix-blend-mode:overlay");
 gl("box-shadow:inset 1px 1px 1px #ffffffe6,inset -1px -1px 2px #0006,inset 0 0 0 1px #ffffff8c,inset 0 0 0 5px #ffffff1f,inset 0 0 0 6px #ffffff55,inset 0 0 0 7px #a8d6cf22,inset 0 0 26px 3px #0003,inset 0 -14px 24px -12px #fff5");
@@ -377,7 +405,7 @@ bl.forEach(a=>mk(a[0],'key b',`left:${(a[1]+1)*12.5-3.6}%;top:0;width:7.2%;heigh
 addEventListener('keydown',e=>{if(e.code=='Space'&&!e.repeat){e.preventDefault();go(!Q.play)}});
 D=PR[0].map(r=>[...r]);roll();rot();
 /* ---- наклон, параллакс и физика предметов под стеклом ---- */
-let GV=0,GS=16.7,NU=COARSE?5:12,MD=15.5;const FQ=28,PXL=[[deep,1.5],[farW,1.2]];let tx=0,ty=0,gx=0,gy=0;
+let GV=0,GS=16.7,MD=15.5;const PXL=[[deep,1.5],[farW,1.2]];let tx=0,ty=0,gx=0,gy=0;
 const aim=(x,y)=>{x=Math.max(-1,Math.min(1,x));y=Math.max(-1,Math.min(1,y));if(Math.abs(x-tx)+Math.abs(y-ty)>.002)AW=240;tx=x;ty=y};
 addEventListener('pointermove',e=>aim((e.clientX/innerWidth-.5)*2,(e.clientY/innerHeight-.5)*2));
 addEventListener('deviceorientation',e=>{if(e.gamma!=null&&e.beta!=null)aim(e.gamma/25,(e.beta-45)/25)});
@@ -386,17 +414,17 @@ const RM=/[?&]calm/.test(location.search);['pointerdown','pointerup','keydown','
 /* у каждого предмета: масса, положение, угол, высота над платой (h) — чем он ближе к стеклу, тем резче */
 const PF=[[230,6,10],[150,30,40],[70,55,60],[130,35,30],[110,20,25]],rd=()=>Math.random()*2-1;
 /* удар: корпус подбрасывает предметы вверх (кик — сильнее всего), лёгкие подлетают выше, тяжёлые лениво */
-function pulse(g,s=1){if(RM)return;AW=240;const p=PF[g];BD.forEach(b=>{if(!GR[g].includes(b.e.dataset.k))return;const i=1/b.m;
+function pulse(g,s=1){if(RM)return;AW=240;const p=PF[g];BD.forEach(b=>{if(!GR[g].includes(b.k))return;const i=1/b.m;
 b.vh+=p[0]*s*Math.pow(i,.7)*(.75+Math.random()*.5);b.vx+=rd()*p[1]*s*i;b.vy+=rd()*p[1]*s*i;b.o+=rd()*p[2]*s*Math.pow(i,.8)})}
 const LS=PXL.map(()=>[0,0,0,0]);
 /* защита от лагов слабых видеокарт: если кадры стабильно долгие — по шагам облегчаем сцену (30 к/с и реже смена фокуса → без гигантов → без самых дальних) */
-function degrade(g){const cut=f=>{BD=BD.filter(b=>f(b)?(b.e.remove(),false):true)};if(g==1){MD=LIVE?31:24;NU=3}else if(g==2)cut(b=>b.z0>.9);else cut(b=>b.z0>.62)}
-if(!RM){let t0=performance.now(),bass=0;requestAnimationFrame(function loop(t){if(FR>25&&LK){t0=t;return requestAnimationFrame(loop)}if(t-t0<MD)return requestAnimationFrame(loop);FR++;if(AW<=0){let e0=0;if(an){for(let i=1;i<9;i++)e0+=fq[i];e0/=2040}if(e0>.08||ACT.length)AW=240;else{t0=t;return requestAnimationFrame(loop)}}AW--;GS+=(Math.min(t-t0,100)-GS)*.04;if(GV<3&&FR>150&&GS>(LIVE?(GV?30:24):(GV?48:38))){GV++;GS=16.7;degrade(GV)}const dt=Math.min(.033,Math.max(.001,(t-t0)/1000));t0=t;
+function degrade(g){const cut=f=>{BD=BD.filter(b=>f(b)?(b.on=0,false):true)};if(g==1)MD=24;else if(g==2)cut(b=>b.z0>.9);else cut(b=>b.z0>.62)}
+if(!RM){let t0=performance.now(),bass=0;requestAnimationFrame(function loop(t){if(FR>25&&LK){t0=t;return requestAnimationFrame(loop)}if(t-t0<MD)return requestAnimationFrame(loop);FR++;if(AW<=0){let e0=0;if(an){for(let i=1;i<9;i++)e0+=fq[i];e0/=2040}if(e0>.08||ACT.length)AW=240;else{t0=t;return requestAnimationFrame(loop)}}AW--;GS+=(Math.min(t-t0,100)-GS)*.04;if(GV<3&&FR>150&&GS>(GV?44:34)){GV++;GS=16.7;degrade(GV)}const dt=Math.min(.033,Math.max(.001,(t-t0)/1000));t0=t;
 gx+=(tx-gx)*(1-Math.exp(-dt*2.5));gy+=(ty-gy)*(1-Math.exp(-dt*2.5));
 PXL.forEach(([e,f],i)=>{const s=LS[i],k=34+i*14,c=2*Math.sqrt(k)*.8;s[2]+=(k*(-tx*22*f-s[0])-c*s[2])*dt;s[3]+=(k*(-ty*16*f-s[1])-c*s[3])*dt;s[0]+=s[2]*dt;s[1]+=s[3]*dt;const tf=`translate(${(OX+s[0]).toFixed(2)}px,${(OY+s[1]).toFixed(2)}px) scale(${CS})`;if(tf!==s.tf){s.tf=tf;e.style.transform=tf}});
 let e=0;if(an){for(let i=1;i<9;i++)e+=fq[i];e/=2040}bass+=(e-bass)*.3;const rm=bass*bass;
 const nw=ctx?ctx.currentTime:0;LT.str=LT.wnd=LT.hrp=0;for(let i=ACT.length;i--;){const a=ACT[i];if(a.e<nw-.1){ACT.splice(i,1);continue}if(a.s<=nw+.03&&a.e>nw&&a.w>LT[a.c])LT[a.c]=a.w}
-let nu=0;BD.forEach((b,bi)=>{const lt=LT[b.cl]||0;b.L+=(lt-b.L)*(1-Math.exp(-dt*(lt>b.L?7:2.5)));const im=1/b.m,air=b.h>.6,fr=air?.3:2.6;
+BD.forEach(b=>{const lt=LT[b.cl]||0;b.L+=(lt-b.L)*(1-Math.exp(-dt*(lt>b.L?7:2.5)));const im=1/b.m,air=b.h>.6,fr=air?.3:2.6;
 /* басы динамика трясут корпус */
 if(rm>.01){b.vh+=Math.random()*rm*1400*Math.pow(im,.7)*dt;b.vx+=rd()*rm*900*im*dt;b.vy+=rd()*rm*900*im*dt}
 /* наклон = «гравитация» вдоль платы; лёгкая резинка держит предмет у своего места */
@@ -405,9 +433,10 @@ if(Math.abs(b.x)>42){b.x=Math.sign(b.x)*42;b.vx*=-.4}if(Math.abs(b.y)>42){b.y=Ma
 b.o+=-5*b.a*dt;b.o*=Math.exp(-(air?.4:2.2)*dt);b.a+=b.o*dt;
 b.vh-=520*dt;b.h+=b.vh*dt;if(b.h<0){b.h=0;if(b.vh<-25){b.vh*=-.3;b.o+=rd()*8*im}else b.vh=0}
 const hm=b.z0*40+2;if(b.h>hm){b.h=hm;b.vh*=-.35}
-const f=b.z0*1.1,lg=1-Math.exp(-dt*(3+(1-b.z0)*9));b.px+=(-gx*22*f-b.px)*lg;b.py+=(-gy*16*f-b.py)*lg;const st=b.e.style,tl=`${(b.x+b.px).toFixed(2)}px ${(b.y+b.py).toFixed(2)}px`,ro=b.a.toFixed(2)+'deg',sk=(1+b.h*.0016+b.L*.1).toFixed(4);if(tl!==b.tl){b.tl=tl;st.translate=tl}if(ro!==b.ro){b.ro=ro;b.i.style.rotate=ro}if(sk!==b.sk){b.sk=sk;st.scale=sk}
-if(LIVE){if((bi+FR)%3==0&&nu<NU){const zq=Math.round(Math.max(.03,b.z0*(1-.82*b.L)-b.h/40)*FQ);if(zq!==b.fq){nu++;b.fq=zq;st.filter=flt(zq/FQ)}}}
-else if((bi+FR)%2==0&&b.cv[1]!==false){const z=Math.max(.03,b.z0*(1-.82*b.L)-b.h/40),tq=Math.round(Math.min(1,Math.max(0,(b.zr-z)/(b.zr-b.zf)))*14);if(tq!==b.tq){b.tq=tq;lvl(b,tq/14)}}});
+const f=b.z0*1.1,lg=1-Math.exp(-dt*(3+(1-b.z0)*9));b.px+=(-gx*22*f-b.px)*lg;b.py+=(-gy*16*f-b.py)*lg;b.sk=1+b.h*.0016+b.L*.1;
+/* фокус: чем выше предмет поднят (класс играет / подпрыгнул), тем резче */
+if(b.sp[1]!==false){const z=Math.max(.03,b.z0*(1-.82*b.L)-b.h/40);b.tw=Math.round(Math.min(1,Math.max(0,(b.zr-z)/(b.zr-b.zf)))*20)/20}});
+draw();
 const vk=(38+tx*14).toFixed(1)+'|'+(3-tx*3).toFixed(1)+'|'+(5-ty*2).toFixed(1);if(vk!==loop.vk){loop.vk=vk;const q=vk.split('|');W.style.setProperty('--gx',q[0]+'%');W.style.setProperty('--lx',q[1]+'px');W.style.setProperty('--ly',q[2]+'px')}requestAnimationFrame(loop)})}
 
 
@@ -454,7 +483,7 @@ addEventListener('resize',()=>calc());addEventListener('orientationchange',()=>{
 /* пока синтезатор не приблизился, клавиши компьютера не играют */
 addEventListener('keydown',e=>{if(locked)e.stopImmediatePropagation()},true);
 document.fonts&&document.fonts.ready.then(()=>calc(1));calc(1)})();
-window.BAKED_=LIVE?0:BAKED;LD.imgs(Object.values(PH));
+window.BAKED_=BAKED;LD.imgs(Object.values(PH));
 
 /* ---- плавный скролл колёсиком (мышь/тачпад): страница догоняет цель с инерцией, как на референсе; сенсорные экраны остаются на родном скролле ---- */
 (function(){if(matchMedia('(pointer:coarse)').matches)return;
