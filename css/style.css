@@ -54,7 +54,7 @@ body{margin:0;background:radial-gradient(circle at 50% 30%,var(--bg1),var(--bg2)
 /* кнопка «играть»: чистый треугольник вместо эмодзи */
 .pl.rb:after{content:"";display:block;width:19px;height:22px;margin-left:4px;background:currentColor;clip-path:polygon(0 0,100% 50%,0 100%)}
 
-/* ---- вход: сетка, линии и крупные буквы как на референсе ---- */
+/* ---- вход: сетка, линии и крупные буквы ---- */
 #sc{position:relative}#stg{position:sticky;top:0;width:100%;overflow:hidden;color:var(--fg)}
 #stg #w{position:absolute;left:0;top:0;z-index:3;will-change:transform}
 .sv-h{position:absolute;left:16px;right:16px;top:14px;display:flex;justify-content:space-between;align-items:center;z-index:5;pointer-events:none}

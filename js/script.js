@@ -51,34 +51,27 @@ const AR={"acc": 1.0450643776824033, "vb": 0.7428571428571429, "v": 2.8426395939
 const NZ2=NZ.replace('.85','.012').replace("numOctaves='3'","numOctaves='2'").split('240').join('700');
 /* ---- инструменты под стеклом: при каждом заходе — новая случайная композиция ----
    Из seed собирается раскладка: рисунок (дрейф, мозаика, розетка, веер, потоки, подсолнух, калейдоскоп),
-   набор, размеры и глубина инструментов. Один рисунок не выпадает два захода подряд.
-   ?c=0…6 (или ?c=fan) — закрепить рисунок, ?seed=… — повторить конкретную раскладку. */
-const SQ=new URLSearchParams(location.search),KEYS=Object.keys(AR),DG=Math.PI/180;
+   набор, размеры и глубина инструментов. Один рисунок не выпадает два захода подряд. */
+const KEYS=Object.keys(AR),DG=Math.PI/180;
 /* IL[k]: длина по длинной стороне (px), наклон «головы» от вертикали (°), 3-е число 1 — предмет без выраженной оси */
 const IL={acc:[220,0,1],ban:[250,0,1],bow:[330,35],clar:[360,-33],harp:[400,4],hf:[230,0,1],hh:[260,0,1],sx1:[290,-4],sxb:[340,-3],sxg:[330,-12],sxr:[340,-14],tr:[230,44],v:[370,-90],vb:[310,27]};
 const mulberry=a=>()=>{a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
-const hsh=s=>{let h=2166136261;for(const c of String(s))h=Math.imul(h^c.charCodeAt(0),16777619);return h>>>0};
 const PN=['drift','mosaic','rosette','fan','streams','sunflower','kaleido'];
-const SEED=SQ.has('seed')?hsh(SQ.get('seed')):(Math.random()*4294967296)>>>0;
-let PI=0;{const c=SQ.get('c');let last=-1;try{last=+localStorage.getItem('sv-comp')}catch(e){}
- if(c!=null&&c!=='')PI=isNaN(+c)?Math.max(0,PN.indexOf(c)):((+c%PN.length)+PN.length)%PN.length;
- else if(SQ.has('seed'))PI=SEED%PN.length;
- else{const o=PN.map((_,i)=>i).filter(i=>i!==last);PI=o[Math.random()*o.length|0]}
+const SEED=(Math.random()*4294967296)>>>0;
+let PI=0;{let last=-1;try{last=+localStorage.getItem('sv-comp')}catch(e){}
+ const o=PN.map((_,i)=>i).filter(i=>i!==last);PI=o[Math.random()*o.length|0];
  try{localStorage.setItem('sv-comp',PI)}catch(e){}}
-document.documentElement.dataset.comp=PN[PI]+':'+SEED;
 const dim=(k,L)=>{const h=L/Math.max(1,AR[k]);return[h*AR[k],h]};
 /* резкость/тень/яркость по глубине z (0 — у самого стекла, 1 — на плите) */
 const fl2=(z,s)=>{const q=1-z,f=v=>(v*s).toFixed(1);return`drop-shadow(${f(3+q*20)}px ${f(5+q*28)}px ${f(3+q*16)}px #000b) blur(${f(.35+8.5*Math.pow(z,1.4))}px) brightness(${(.72+.4*(1-z)).toFixed(2)}) contrast(${(.8+.2*(1-z)).toFixed(2)}) saturate(.9)`};
 
 /* ---- предметы под стеклом: запечённые спрайты на двух холстах ----
-   Раньше каждый из ~80 предметов был отдельным слоем с живым CSS-фильтром (размытие+тень), и видеокарта
-   пересчитывала их каждый кадр — отсюда лаги, глитчи и вылеты на телефонах (кончалась видеопамять).
-   Теперь каждый предмет один раз «печётся» в картинку с тем же фильтром (в покое, в середине и в фокусе),
-   а каждый кадр все предметы рисуются на ОДНОМ холсте под матовым слоем и одном над ним.
-   Где браузер не умеет canvas-фильтры (Safari), размытие и тень считаются вручную тем же рецептом. */
+   Каждый предмет один раз «печётся» в картинку с размытием, тенью и цветом (в покое, в середине и в фокусе),
+   а каждый кадр все предметы рисуются на одном холсте под матовым слоем и одном над ним — так видеокарте легко.
+   Где браузер не умеет canvas-фильтры (Safari), размытие и тень считаются вручную по тому же рецепту. */
 const IM={};let BK;const BAKED=new Promise(r=>BK=r);
 const IMGS=Promise.all(KEYS.map(k=>new Promise(r=>{const i=new Image();i.onload=i.onerror=r;i.src=PH[k];IM[k]=i})));
-const CF=!SQ.has('jsblur')&&(()=>{try{const c=document.createElement('canvas');c.width=c.height=9;const x=c.getContext('2d');x.filter='blur(2px)';x.fillStyle='#fff';x.fillRect(4,4,1,1);return x.getImageData(1,4,1,1).data[3]>0}catch(e){return false}})();
+const CF=(()=>{try{const c=document.createElement('canvas');c.width=c.height=9;const x=c.getContext('2d');x.filter='blur(2px)';x.fillStyle='#fff';x.fillRect(4,4,1,1);return x.getImageData(1,4,1,1).data[3]>0}catch(e){return false}})();
 /* гауссово размытие тремя проходами «коробкой» (ch каналов на пиксель, премультиплицированные float) */
 function gblur(a,w,h,s,ch){if(s<.35)return;const n=3,wi=Math.sqrt(12*s*s/n+1)|0,wl=wi%2?wi:wi-1,m=Math.round((12*s*s-n*wl*wl-4*n*wl-3*n)/(-4*wl-4)),t=new Float32Array(a.length);
  for(let i=0;i<n;i++){const r=((i<m?wl:wl+2)-1)/2;if(r<1)continue;bxp(a,t,w,h,r,1,ch);bxp(t,a,w,h,r,0,ch)}}
@@ -298,11 +291,21 @@ let an,duck,rvg,db,nt,tm,D,M,vs={};
 const Q={bpm:100,sw:.2,dv:.8,sc:0,pump:1,play:0,step:0};
 const SC=[[0,3,5,7,10],[0,2,3,5,7,8,10],[0,2,4,5,7,9,11],[0,2,3,5,7,9,10],[0,1,3,5,7,8,10],[0,1,2,3,4,5,6,7,8,9,10,11]];
 const sem=m=>{const c=SC[Q.sc],n=c.length;return c[(m%n+n)%n]+12*Math.floor(m/n)};
-function init(){if(ctx)return;ctx=new(window.AudioContext||window.webkitAudioContext)();const g=()=>ctx.createGain();
+/* iPhone в беззвучном режиме глушит веб-звук: просим систему считать сайт плеером (iOS 17+),
+   а на старых iOS включаем бесшумную петлю <audio> — она переводит звук в «медийный» канал */
+function unmuteIOS(){try{if(navigator.audioSession){navigator.audioSession.type='playback';return}}catch(e){}
+ if(!/iP(hone|ad|od)|Macintosh/.test(navigator.userAgent)||!('ontouchend' in document))return;
+ const n=800,b=new ArrayBuffer(44+n),v=new DataView(b),w=(o,t)=>[...t].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));
+ w(0,'RIFF');v.setUint32(4,36+n,true);w(8,'WAVEfmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,8000,true);v.setUint32(28,8000,true);v.setUint16(32,1,true);v.setUint16(34,8,true);w(36,'data');v.setUint32(40,n,true);
+ for(let i=0;i<n;i++)v.setUint8(44+i,128);
+ const a=new Audio(URL.createObjectURL(new Blob([b],{type:'audio/wav'})));a.loop=true;a.setAttribute('playsinline','');a.play().catch(()=>0)}
+function init(){if(ctx)return;unmuteIOS();ctx=new(window.AudioContext||window.webkitAudioContext)();const g=()=>ctx.createGain();
 pre=g();shp=ctx.createWaveShaper();shp.oversample=COARSE?'2x':'4x';trem=g();duck=g();db=g();dly=ctx.createDelay(1);fb=g();fb.gain.value=.4;wet=g();mst=g();rvg=g();
 const cp=ctx.createDynamicsCompressor(),lp=ctx.createBiquadFilter(),rv=ctx.createConvolver(),n=ctx.sampleRate*2,ir=ctx.createBuffer(2,n,ctx.sampleRate);lp.frequency.value=3000;
 for(let c=0;c<2;c++){const d=ir.getChannelData(c);for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,3)}rv.buffer=ir;
-pre.connect(shp);shp.connect(trem);trem.connect(duck);duck.connect(mst);duck.connect(dly);dly.connect(lp);lp.connect(fb);fb.connect(dly);lp.connect(wet);wet.connect(mst);duck.connect(rv);db.connect(rv);rv.connect(rvg);rvg.connect(mst);db.connect(mst);mst.connect(cp);cp.connect(ctx.destination);an=ctx.createAnalyser();an.fftSize=1024;cp.connect(an);
+pre.connect(shp);shp.connect(trem);trem.connect(duck);duck.connect(mst);duck.connect(dly);dly.connect(lp);lp.connect(fb);fb.connect(dly);lp.connect(wet);wet.connect(mst);duck.connect(rv);db.connect(rv);rv.connect(rvg);rvg.connect(mst);db.connect(mst);mst.connect(cp);
+/* предохранитель на выходе: срабатывает только у самого потолка (−2 дБ), чтобы на максимуме громкости и эффектов не было хрипа */
+const lim=ctx.createDynamicsCompressor();lim.threshold.value=-2;lim.knee.value=0;lim.ratio.value=20;lim.attack.value=.002;lim.release.value=.1;cp.connect(lim);lim.connect(ctx.destination);an=ctx.createAnalyser();an.fftSize=1024;lim.connect(an);
 lfo=ctx.createOscillator();lfoP=g();lfoF=g();lfoA=g();lfo.connect(lfoP);lfo.connect(lfoF);lfo.connect(lfoA);lfoA.connect(trem.gain);
 vib=ctx.createOscillator();vib.frequency.value=5.5;vibG=g();vib.connect(vibG);lfo.start();vib.start();
 nb=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate);const d=nb.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
@@ -403,23 +406,42 @@ const KW=bx('kw',[20,290,815,226],[14,452,412,248],'','overflow:hidden;border-ra
 wh.forEach((n,i)=>mk(n,'key w',`left:${i*12.5}%;top:0;width:12.5%;height:100%`));
 bl.forEach(a=>mk(a[0],'key b',`left:${(a[1]+1)*12.5-3.6}%;top:0;width:7.2%;height:58%`));
 addEventListener('keydown',e=>{if(e.code=='Space'&&!e.repeat){e.preventDefault();go(!Q.play)}});
-D=PR[0].map(r=>[...r]);roll();rot();
+D=PR[0].map(r=>[...r]);roll();
+/* ---- настройки запоминаются в браузере: инструмент, ручки, октава, паттерн, ARP, LYR ---- */
+const SK=['pi','oi','ei','b','mt','f','at','re','ec','ov','oc','ar','ly'];
+try{const o=JSON.parse(localStorage.getItem('sv-set')||'null');if(o){SK.forEach(k=>{if(typeof o[k]==='number')S[k]=o[k]});
+ if(o.bpm)Q.bpm=Math.max(60,Math.min(200,o.bpm));if(o.bs>=0&&o.bs<4){bs=o.bs;D=PR[bs].map(r=>[...r]);bb.firstChild.textContent=BN[bs]}
+ KN[2].s(S.mt);ar.classList.toggle('on',!!S.ar);lyb.classList.toggle('on',!!S.ly);W.classList.toggle('ly',!!S.ly)}}catch(e){}
+rot();
+let svT;const saveSet=()=>{clearTimeout(svT);svT=setTimeout(()=>{try{const o={bpm:Q.bpm,bs};SK.forEach(k=>o[k]=S[k]);localStorage.setItem('sv-set',JSON.stringify(o))}catch(e){}},300)};
+['pointerup','wheel','keyup'].forEach(n=>addEventListener(n,saveSet,{passive:true}));
+addEventListener('visibilitychange',()=>{if(document.hidden)saveSet()});
+
+/* ---- MIDI-клавиатура (Chrome/Edge на компьютере): при первом нажатии на синтезатор просим доступ; ноты раскладываются от до первой октавы ---- */
+(function(){if(!navigator.requestMIDIAccess||COARSE)return;let asked=0;
+ const on=n=>{const s=n-60-12*S.oc;if(els[s])return press(s);if(!keys.has(s)){keys.add(s);play(s)}},
+  off=n=>{const s=n-60-12*S.oc;if(els[s])return unpress(s);if(keys.has(s)){keys.delete(s);release(s)}},
+  msg=e=>{const[st,n,v]=e.data,c=st&0xf0;if(c==0x90&&v>0)on(n);else if(c==0x80||c==0x90)off(n);else if(c==0xB0&&n==1){KN[2].s(v/127);rot();show(2)}},
+  hook=m=>{const bind=()=>m.inputs.forEach(i=>i.onmidimessage=msg);bind();m.onstatechange=bind};
+ const ask=()=>{if(asked)return;asked=1;navigator.requestMIDIAccess().then(hook).catch(()=>0)};
+ try{navigator.permissions.query({name:'midi'}).then(p=>{if(p.state=='granted')ask()}).catch(()=>0)}catch(e){}
+ GL.addEventListener('pointerdown',ask,{once:true});addEventListener('keydown',ask,{once:true})})();
 /* ---- наклон, параллакс и физика предметов под стеклом ---- */
 let GV=0,GS=16.7,MD=15.5;const PXL=[[deep,1.5],[farW,1.2]];let tx=0,ty=0,gx=0,gy=0;
 const aim=(x,y)=>{x=Math.max(-1,Math.min(1,x));y=Math.max(-1,Math.min(1,y));if(Math.abs(x-tx)+Math.abs(y-ty)>.002)AW=240;tx=x;ty=y};
 addEventListener('pointermove',e=>aim((e.clientX/innerWidth-.5)*2,(e.clientY/innerHeight-.5)*2));
 addEventListener('deviceorientation',e=>{if(e.gamma!=null&&e.beta!=null)aim(e.gamma/25,(e.beta-45)/25)});
 document.addEventListener('pointerdown',()=>{try{const r=DeviceOrientationEvent.requestPermission&&DeviceOrientationEvent.requestPermission();r&&r.catch&&r.catch(()=>{})}catch(_){}},{once:true});
-const RM=/[?&]calm/.test(location.search);['pointerdown','pointerup','keydown','keyup','touchstart','wheel'].forEach(n=>addEventListener(n,()=>{AW=240},{capture:true,passive:true}));
+['pointerdown','pointerup','keydown','keyup','touchstart','wheel'].forEach(n=>addEventListener(n,()=>{AW=240},{capture:true,passive:true}));
 /* у каждого предмета: масса, положение, угол, высота над платой (h) — чем он ближе к стеклу, тем резче */
 const PF=[[230,6,10],[150,30,40],[70,55,60],[130,35,30],[110,20,25]],rd=()=>Math.random()*2-1;
 /* удар: корпус подбрасывает предметы вверх (кик — сильнее всего), лёгкие подлетают выше, тяжёлые лениво */
-function pulse(g,s=1){if(RM)return;AW=240;const p=PF[g];BD.forEach(b=>{if(!GR[g].includes(b.k))return;const i=1/b.m;
+function pulse(g,s=1){AW=240;const p=PF[g];BD.forEach(b=>{if(!GR[g].includes(b.k))return;const i=1/b.m;
 b.vh+=p[0]*s*Math.pow(i,.7)*(.75+Math.random()*.5);b.vx+=rd()*p[1]*s*i;b.vy+=rd()*p[1]*s*i;b.o+=rd()*p[2]*s*Math.pow(i,.8)})}
 const LS=PXL.map(()=>[0,0,0,0]);
 /* защита от лагов слабых видеокарт: если кадры стабильно долгие — по шагам облегчаем сцену (30 к/с и реже смена фокуса → без гигантов → без самых дальних) */
 function degrade(g){const cut=f=>{BD=BD.filter(b=>f(b)?(b.on=0,false):true)};if(g==1)MD=24;else if(g==2)cut(b=>b.z0>.9);else cut(b=>b.z0>.62)}
-if(!RM){let t0=performance.now(),bass=0;requestAnimationFrame(function loop(t){if(FR>25&&LK){t0=t;return requestAnimationFrame(loop)}if(t-t0<MD)return requestAnimationFrame(loop);FR++;if(AW<=0){let e0=0;if(an){for(let i=1;i<9;i++)e0+=fq[i];e0/=2040}if(e0>.08||ACT.length)AW=240;else{t0=t;return requestAnimationFrame(loop)}}AW--;GS+=(Math.min(t-t0,100)-GS)*.04;if(GV<3&&FR>150&&GS>(GV?44:34)){GV++;GS=16.7;degrade(GV)}const dt=Math.min(.033,Math.max(.001,(t-t0)/1000));t0=t;
+{let t0=performance.now(),bass=0;requestAnimationFrame(function loop(t){if(FR>25&&LK){t0=t;return requestAnimationFrame(loop)}if(t-t0<MD)return requestAnimationFrame(loop);FR++;if(AW<=0){let e0=0;if(an){for(let i=1;i<9;i++)e0+=fq[i];e0/=2040}if(e0>.08||ACT.length)AW=240;else{t0=t;return requestAnimationFrame(loop)}}AW--;GS+=(Math.min(t-t0,100)-GS)*.04;if(GV<3&&FR>150&&GS>(GV?44:34)){GV++;GS=16.7;degrade(GV)}const dt=Math.min(.033,Math.max(.001,(t-t0)/1000));t0=t;
 gx+=(tx-gx)*(1-Math.exp(-dt*2.5));gy+=(ty-gy)*(1-Math.exp(-dt*2.5));
 PXL.forEach(([e,f],i)=>{const s=LS[i],k=34+i*14,c=2*Math.sqrt(k)*.8;s[2]+=(k*(-tx*22*f-s[0])-c*s[2])*dt;s[3]+=(k*(-ty*16*f-s[1])-c*s[3])*dt;s[0]+=s[2]*dt;s[1]+=s[3]*dt;const tf=`translate(${(OX+s[0]).toFixed(2)}px,${(OY+s[1]).toFixed(2)}px) scale(${CS})`;if(tf!==s.tf){s.tf=tf;e.style.transform=tf}});
 let e=0;if(an){for(let i=1;i<9;i++)e+=fq[i];e/=2040}bass+=(e-bass)*.3;const rm=bass*bass;
@@ -443,7 +465,6 @@ const vk=(38+tx*14).toFixed(1)+'|'+(3-tx*3).toFixed(1)+'|'+(5-ty*2).toFixed(1);i
 /* ---- вход: сцена с названием, линиями и крупными буквами (тексты в HERO) ---- */
 (function(){
 const HERO={t:'SubVitro—16',keep:[0,3,8,9,10],big:['S','V','1','6'],tag:'Музыка начинается там,<br>где кончается оркестр.',pill:'Листайте вниз'};
-const calm=RM;
 const SC2=document.createElement('div');SC2.id='sc';document.body.insertBefore(SC2,O);
 const ST=$('',SC2);ST.id='stg';
 const hd=$('sv-h',ST,'','<div class="sv-t">'+[...HERO.t].map(c=>'<span>'+c+'</span>').join('')+'</div><div class="sv-s"><div class="sv-g2">'+HERO.tag+'</div><div class="sv-p">'+HERO.pill+'</div><button class="sv-th" type="button" aria-label="Сменить тему"></button></div>');
@@ -460,20 +481,20 @@ const bg=$('sv-b',ST),grp=[HERO.big.slice(0,2),HERO.big.slice(2)].map((a,i)=>$('
 ST.appendChild(W);W.style.cssText+=';width:0;height:0;transform-origin:0 0';GL.style.cssText+=';left:0;top:0;transform:none';
 let vw,vh,mob,fs,k0,kF,cy0,cyF,SH,RG,locked=true,lm=-1,lp=-1,vwL=-1,vhM=0,key0='';
 const sm=x=>x*x*(3-2*x),cl=x=>Math.max(0,Math.min(1,x)),lr=(a,b,t)=>a+(b-a)*t;
-function render(f){const p=calm?1:cl(scrollY/RG);if(!f&&p===lp)return;lp=p;
+function render(f){const p=cl(scrollY/RG);if(!f&&p===lp)return;lp=p;
 const e=sm(cl((p-.04)/.9)),t=mob?1:0,sw=lr(855,440,t),sh=lr(560,740,t);
 if(t!==lm){lm=t;R.forEach(r=>{const s=r.e.style;s.left=lr(r.w[0],r.n[0],t)+'px';s.top=lr(r.w[1],r.n[1],t)+'px';s.width=lr(r.w[2],r.n[2],t)+'px';s.height=lr(r.w[3],r.n[3],t)+'px'});
 GL.style.width=sw+'px';GL.style.height=sh+'px';const cw=Math.round(lr(472,564,t)),chh=Math.round(lr(192,124,t));if(cv.width!==cw||cv.height!==chh){cv.width=cw;cv.height=chh}
 CS=Math.max(sw/855,sh/547)*1.09;OX=(sw-855*CS)/2;OY=(sh-547*CS)/2;[SB,SF].forEach(c=>c.style.transform=`translate(${OX}px,${OY}px) scale(${CS})`);buildScene(sw/CS,sh/CS)}
 W.style.transform=`translate(${vw/2}px,${lr(cy0,cyF,e)}px) rotate(${(3.5*Math.sin(Math.PI*e)).toFixed(2)}deg) scale(${lr(k0,kF,e)}) translate(${-sw/2}px,${-sh/2}px)`;
 const c=sm(cl((p-.2)/.14));ch.forEach((s,i)=>{if(HERO.keep.includes(i)||!s.nw)return;s.style.width=s.nw*(1-c)+'px';s.style.opacity=1-c});
-const T=.88*vh+.14*fs;lt.forEach((s,i)=>{s.style.transform=`translateY(${-T*sm(cl((p-[.02,.06,.1,.14][i])/.34))}px)`});
-const u=sm(cl((p-.35)/.4));LN.style.transform=`translateY(${-u*vh*.4}px)`;LN.style.opacity=hd.firstChild.nextSibling.firstChild.style.opacity=1-u;
-locked=LK=p<.995;W.style.pointerEvents=locked?'none':'';if(calm)hd.style.display=LN.style.display=bg.style.display='none'}
+const T=(mob?.8765:.965)*vh+.2*fs+24;lt.forEach((s,i)=>{s.style.transform=`translateY(${-T*sm(cl((p-[.02,.06,.1,.14][i])/.34))}px)`});
+const u=sm(cl((p-.35)/.4));LN.style.transform=`translateY(${-u*vh*.4}px)`;LN.style.opacity=hd.firstChild.nextSibling.firstChild.style.opacity=1-u;hd.querySelector('.sv-p').style.opacity=1-sm(cl((p-.5)/.3));
+locked=LK=p<.995;W.style.pointerEvents=locked?'none':''}
 function calc(force){const w=innerWidth;if(w!==vwL){vwL=w;vhM=0}vhM=Math.max(vhM,innerHeight);const m0=w<640||(w<900&&w/innerHeight<.85);vw=w;vh=m0?vhM:innerHeight;mob=m0;const key=vw+'|'+vh+'|'+mob;if(!force&&key===key0)return;key0=key;
 let kD=Math.min(1.7,(vw-16)/1000,(vh-24)/700);if(kD<.6)kD=Math.min(1.7,(vw-16)/1000);if(!mob&&vh<520)kD=Math.max(.3,Math.min(1.7,(vw-16)/1000,(vh-80)/560));
 const ph=mob?740:560;kF=mob?Math.min(1.3,(vw-16)/440):kD;if(Math.abs(kF-KSC)>.15){KSC=kF;lm=-1}k0=mob?Math.min(Math.max(.381*vh-39-28,.2*vh)/740,.62*vw/440):Math.min(kF,.45*vh/560);cy0=mob?.4805*vh+19.5:.493*vh;cyF=Math.max(vh/2,ph*kF/2+56);
-SH=Math.max(vh,cyF+ph*kF/2+24);RG=calm?1:Math.round(vh*1.35);fs=Math.min(.346*vw,(mob?.16:.7)*vh);
+SH=Math.max(vh,cyF+ph*kF/2+24);RG=Math.round(vh*1.35);fs=Math.min(.346*vw,(mob?.16:.7)*vh);
 ST.style.height=SH+'px';SC2.style.height=SH+RG+'px';ST.style.setProperty('--fs',fs+'px');
 rows.forEach((r,i)=>r.style.top=(mob?[.29,.478,.671]:[.22,.43,.63])[i]*vh+'px');tag.style.top=.29*vh+11+'px';
 grp.forEach(g=>g.style.top=((mob?.8765:.965)*vh-.864*fs)+'px');
@@ -485,7 +506,7 @@ addEventListener('keydown',e=>{if(locked)e.stopImmediatePropagation()},true);
 document.fonts&&document.fonts.ready.then(()=>calc(1));calc(1)})();
 window.BAKED_=BAKED;LD.imgs(Object.values(PH));
 
-/* ---- плавный скролл колёсиком (мышь/тачпад): страница догоняет цель с инерцией, как на референсе; сенсорные экраны остаются на родном скролле ---- */
+/* ---- плавный скролл колёсиком (мышь/тачпад): страница догоняет цель с инерцией; сенсорные экраны остаются на родном скролле ---- */
 (function(){if(matchMedia('(pointer:coarse)').matches)return;
 const R=document.documentElement;let cur=scrollY,tg=cur,run=0,lt=0;
 const mx=()=>Math.max(0,R.scrollHeight-innerHeight),cl=v=>Math.max(0,Math.min(mx(),v));
