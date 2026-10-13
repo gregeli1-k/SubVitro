@@ -2,9 +2,14 @@
 const LD=(()=>{const el=document.getElementById('ld');if(!el)return{imgs(){}};
 const nu=el.querySelector('.ld-n'),root=document.documentElement,rm=matchMedia('(prefers-reduced-motion:reduce)').matches,rn=(a,b)=>a+Math.random()*(b-a);
 let pr=.05,shown=0,nxt=0,end=0;
-const fin=()=>{if(end)return;end=1;root.classList.remove('ld');const gone=()=>el.remove();
+/* штора уезжает через transform (на видеокарте, без перерасчёта вёрстки) вместе с надписями: «100» и название поднимаются вместе с ней */
+const wi=document.createElement('div');wi.className='ld-i';while(el.firstChild)wi.appendChild(el.firstChild);el.appendChild(wi);
+const fin=()=>{if(end)return;end=1;const gone=()=>{root.classList.remove('ld');el.remove()};
  if(rm||!el.animate)return gone();
- el.animate({height:['100%','0%']},{duration:625,easing:'cubic-bezier(.5,.2,.2,1)',fill:'forwards'}).onfinish=gone};
+ /* дать странице спокойно дорисовать первый кадр под шторой, и только потом начинать движение */
+ requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(()=>{
+  const o={duration:1100,easing:'cubic-bezier(.76,0,.18,1)',fill:'forwards'};
+  el.animate({transform:['translateY(0)','translateY(-100%)']},o).onfinish=gone},120)))};
 const show=()=>el.classList.add('rd');
 Promise.all(['400 32px "Inter Tight"','400 13px "IBM Plex Mono"','500 9px "IBM Plex Sans"'].map(f=>document.fonts.load(f))).catch(()=>0).then(()=>{pr+=.2;show()});
 setTimeout(show,700);setTimeout(fin,9000);
@@ -13,7 +18,7 @@ setTimeout(show,700);setTimeout(fin,9000);
   if(goal>shown){shown=Math.min(goal,shown+Math.max(1,Math.round((goal-shown)*rn(.45,1))));nu.textContent=shown;if(shown>=100){setTimeout(fin,rm?0:260);return}}
   nxt=t+rn(110,230)}
  requestAnimationFrame(tk)})(0);
-return{imgs(a){let k=0;pr=Math.max(pr,.3);a.forEach(s=>{const i=new Image();i.onload=i.onerror=()=>{pr=++k==a.length?1:pr+.62/a.length};i.src=s})}}})();
+return{imgs(a){let k=0;pr=Math.max(pr,.3);a.forEach(s=>{const i=new Image();i.onload=i.onerror=()=>{if(++k==a.length){pr=.9;(window.BAKED_||Promise.resolve()).then(()=>pr=1)}else pr+=.62/a.length};i.src=s})}}})();
 const NZ="url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n' x='0' y='0' width='100%' height='100%'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 1.4 0 0 0 -.38'/></filter><rect width='240' height='240' filter='url(%23n)'/></svg>\") 0 0/240px 240px";
 const $=(c,p,s,h)=>{const e=document.createElement('div');if(c)e.className=c;if(s)e.style.cssText=s;if(h!=null)e.innerHTML=h;p.appendChild(e);return e};
 const W=document.getElementById('w'),O=document.getElementById('o');
@@ -63,7 +68,38 @@ let PI=0;{const c=SQ.get('c');let last=-1;try{last=+localStorage.getItem('sv-com
 document.documentElement.dataset.comp=PN[PI]+':'+SEED;
 const dim=(k,L)=>{const h=L/Math.max(1,AR[k]);return[h*AR[k],h]};
 /* резкость/тень/яркость по глубине z (0 — у самого стекла, 1 — на плите) */
-const flt=z=>{const q=1-z;return`drop-shadow(${(3+q*20).toFixed(1)}px ${(5+q*28).toFixed(1)}px ${(3+q*16).toFixed(1)}px #000b) blur(${(.35+8.5*Math.pow(z,1.4)).toFixed(1)}px) brightness(${(.72+.4*(1-z)).toFixed(2)}) contrast(${(.8+.2*(1-z)).toFixed(2)}) saturate(.9)`};
+const fl2=(z,s)=>{const q=1-z,f=v=>(v*s).toFixed(1);return`drop-shadow(${f(3+q*20)}px ${f(5+q*28)}px ${f(3+q*16)}px #000b) blur(${f(.35+8.5*Math.pow(z,1.4))}px) brightness(${(.72+.4*(1-z)).toFixed(2)}) contrast(${(.8+.2*(1-z)).toFixed(2)}) saturate(.9)`},flt=z=>fl2(z,1);
+
+/* ---- запечённое размытие и тени ----
+   Живой CSS-фильтр на ~80 слоях видеокарта пересчитывает КАЖДЫЙ кадр — отсюда лаги и глитчи на слабых картах/4K.
+   Поэтому каждый предмет один раз «печётся» в картинку (canvas) с тем же фильтром: в покое и в фокусе (когда играет его класс).
+   Дальше при движении видеокарта только двигает готовые текстуры, а переход покой↔фокус — плавное перекрытие двух картинок.
+   Если браузер не умеет canvas-фильтры (старый Safari) или в адресе ?live — работает прежний живой фильтр. */
+const CF=(()=>{try{const c=document.createElement('canvas').getContext('2d');return!!c&&'filter' in c}catch(e){return false}})(),LIVE=!CF||SQ.has('live');
+const IM={};let BK;const BAKED=new Promise(r=>BK=r);
+const IMGS=Promise.all(KEYS.map(k=>new Promise(r=>{const i=new Image();i.onload=i.onerror=r;i.src=PH[k];IM[k]=i})));
+const BQ=[];let bqRun=0,bqDone=0;
+/* запекает один уровень (z) предмета: холст с полями под тень и размытие, центр — в центре предмета */
+function bakeLv(b,lv){const t=b.t,z=lv==1?b.zf:lv==2?(b.zr+b.zf)/2:b.zr,q=1-z,bl=.35+8.5*Math.pow(z,1.4),sb=3+q*16,off=Math.max(3+q*20,5+q*28),M=Math.ceil(off+2.4*Math.hypot(sb,bl))+2,
+ th=t.r*DG,c=Math.abs(Math.cos(th)),sn=Math.abs(Math.sin(th)),W=t.w*c+t.h*sn+2*M,H=t.w*sn+t.h*c+2*M,
+ qb=Math.min(Math.min(3,DPR*Math.max(1,KSC)),2.5),sc=Math.max(.25,Math.min(qb,1.6/bl)),pw=Math.max(2,Math.round(W*sc)),ph=Math.max(2,Math.round(H*sc));
+ if(pw*ph>4.2e6)return null;
+ const cv=document.createElement('canvas');cv.width=pw;cv.height=ph;const x=cv.getContext('2d');
+ x.imageSmoothingQuality='high';x.filter=fl2(z,sc);x.setTransform(sc,0,0,sc,pw/2,ph/2);x.rotate(th);if(t.fl)x.scale(-1,1);
+ x.drawImage(IM[t.k],-t.w/2,-t.h/2,t.w,t.h);
+ cv.style.cssText=`position:absolute;left:${((t.w-W)/2).toFixed(1)}px;top:${((t.h-H)/2).toFixed(1)}px;width:${W.toFixed(1)}px;height:${H.toFixed(1)}px;pointer-events:none`;return cv}
+function bakePump(){bqRun=0;const t0=performance.now();
+ while(BQ.length&&performance.now()-t0<5){const[b,lv]=BQ.shift();if(!b.e.isConnected||b.cv[lv]!==undefined)continue;
+  const c=bakeLv(b,lv);b.cv[lv]=c||false;if(c){b.i.appendChild(c);if(lv==0)lvl(b,b.tw||0);else lvl(b,b.tw)}}
+ if(BQ.length){bqRun=1;requestAnimationFrame(bakePump)}else BK()}
+function bakeQ(b,lv,first){if(b.cv[lv]!==undefined||b.qd[lv])return;b.qd[lv]=1;first?BQ.unshift([b,lv]):BQ.push([b,lv]);if(!bqRun){bqRun=1;requestAnimationFrame(bakePump)}}
+/* t: 0 — предмет в покое (размыт), 1 — в фокусе (резкий, у стекла); три запечённых уровня: покой, середина, фокус */
+function lvl(b,t){b.tw=t;const A=b.cv[0],B=b.cv[1],M=b.cv[2];if(t>0&&B===undefined)bakeQ(b,1);if(t>.1&&B&&M===undefined)bakeQ(b,2);if(!A)return;
+ const so=(c,o)=>{if(!c)return;c.style.opacity=o.toFixed(2);c.style.visibility=o<.01?'hidden':'visible'};
+ if(!B){so(A,1);return}
+ if(!M){so(A,t>.995?0:1-t*t);so(B,t);return}
+ if(t<.5){const u=t*2;so(A,1-u*u);so(M,u);so(B,0)}else{const u=(t-.5)*2;so(A,0);so(M,1-u*u);so(B,u)}}
+
 
 /* раскладка в системе координат с центром в середине стекла; A,B — полуразмеры видимой области + запас на сдвиг при наклоне */
 function compose(fw,fh){
@@ -153,28 +189,34 @@ for(let i=0;i<g;i++){const a=p0+i/g*6.283;it.push(Object.assign(I(gk[i],Math.cos
 const hr={},thr=({drift:.3,mosaic:0,rosette:.5,fan:.45,streams:wvF?.5:.4,sunflower:.5,kaleido:.4})[PN[PI]];
 if(PN[PI]!='mosaic')it.forEach(t=>{if(t.gi||Math.abs(t.x)>fw/2||Math.abs(t.y)>fh/2)return;if(!hr[t.k]||t.L>hr[t.k].L)hr[t.k]=t});
 Object.values(hr).forEach(t=>{t.sh=1;if(!t.td)t.L=Math.min(t.L*rn(1.2,1.5),480*sc)});
-it.forEach(t=>{if(!t.gi&&t.d<thr)t.sh=1;t.z=t.gi?rn(.93,.98):t.sh?rn(.08,.34):.42+.46*Math.min(1,Math.max(0,t.d))});
+it.forEach(t=>{if(!t.gi&&t.d<thr)t.sh=1;t.z=t.gi?rn(.93,.98):t.sh?rn(.08,.34):.42+.5*Math.min(1,Math.max(0,.4*t.d+.6*R()));
+ if(!t.gi&&!t.sh&&PN[PI]!='mosaic')t.r+=R()<.3?rn(-28,28):rn(-9,9)});
 return it}
 
 /* тела для физики: масса, положение, угол, высота над платой, «нагрузка» класса */
-const mkBD=l=>l.map(e=>({e,i:e.firstChild,z0:+e.dataset.z,px:0,py:0,m:Math.max(.5,parseFloat(e.style.width)*parseFloat(e.style.height)/42000),x:0,y:0,vx:0,vy:0,a:0,o:0,h:0,vh:0,fh:-9,L:0,cl:CL[e.dataset.k]}));
+const mkBD=l=>l.map(e=>({e,i:e.firstChild,z0:+e.dataset.z,px:0,py:0,m:Math.max(.5,parseFloat(e.style.width)*parseFloat(e.style.height)/42000),x:0,y:0,vx:0,vy:0,a:0,o:0,h:0,vh:0,fh:-9,L:0,cl:CL[e.dataset.k],cv:[],qd:[],tw:0,tq:-1}));
 let BD=[];
 /* строит (или перестраивает при смене ПК↔телефон) все предметы под стеклом; обёртка держит тень и фокус, картинка — только поворот */
 /* бюджет видеопамяти: каждый слой с фильтром = своя текстура (площадь × DPR² × 4 байта). На телефонах она быстро кончается —
    система убивает вкладку. Если сцена не влезает, сначала ужимаем гигантов, потом убираем самые дальние (и самые размытые) предметы */
-const DPR=Math.min(3,window.devicePixelRatio||1),COARSE=matchMedia('(pointer:coarse)').matches,VRAM=(COARSE?72:240)*1e6/(4*DPR*DPR);
+let KSC=1;const DPR=Math.min(3,window.devicePixelRatio||1),COARSE=matchMedia('(pointer:coarse)').matches,VRAM=()=>(COARSE?72:150)*1e6/(4*Math.pow(DPR*Math.max(1,KSC),2));
 function fit(l,fw,fh){const ar=t=>{const[w,h]=dim(t.k,t.L*(1.07-.13*t.z));return Math.min(w,fw+120)*Math.min(h,fh+120)},tot=()=>l.reduce((s,t)=>s+ar(t),0);
- if(tot()<=VRAM)return l;
+ const V=VRAM()*(LIVE?1:2.2);if(tot()<=V)return l;
  l.forEach(t=>{if(t.gi)t.L*=.72});
  const o=l.filter(t=>!t.gi).sort((a,b)=>b.z-a.z);
- while(tot()>VRAM&&o.length>12){const t=o.shift();l.splice(l.indexOf(t),1)}
+ while(tot()>V&&o.length>12){const t=o.shift();l.splice(l.indexOf(t),1)}
  return l}
 function buildScene(fw,fh){[SB,SF].forEach(c=>{while(c.firstChild)c.removeChild(c.firstChild)});
- const els=fit(compose(fw,fh),fw,fh).sort((a,b)=>b.z-a.z).map(t=>{const[w,h]=dim(t.k,t.L*(1.07-.13*t.z)),e=document.createElement('div'),im=document.createElement('img');
+ const ts=[],els=fit(compose(fw,fh),fw,fh).sort((a,b)=>b.z-a.z).map(t=>{const[w,h]=dim(t.k,t.L*(1.07-.13*t.z)),e=document.createElement('div');
   e.dataset.k=t.k;e.dataset.z=t.z;e.style.cssText=`position:absolute;left:${(427.5+t.x-w/2).toFixed(1)}px;top:${(273.5+t.y-h/2).toFixed(1)}px;width:${w.toFixed(1)}px;height:${h.toFixed(1)}px;will-change:transform;pointer-events:none`;
-  im.src=PH[t.k];im.alt='';im.draggable=false;im.decoding='async';im.style.cssText=`position:absolute;left:0;top:0;width:100%;height:100%;transform:rotate(${t.r.toFixed(2)}deg)${t.fl?' scaleX(-1)':''}`;
-  e.appendChild(im);(t.z<.4?SF:SB).appendChild(e);return e});
- BD=mkBD(els);BD.forEach(b=>{b.e.style.filter=RM?`drop-shadow(4px 8px 5px #000b) blur(${(.35+8.5*Math.pow(b.z0,1.4)).toFixed(1)}px) brightness(${(.72+.38*(1-b.z0)).toFixed(2)})`:flt(Math.max(.03,b.z0));b.fh=0})}
+  const im=document.createElement(LIVE?'img':'div');
+  if(LIVE){im.src=PH[t.k];im.alt='';im.draggable=false;im.decoding='async';im.style.cssText=`position:absolute;left:0;top:0;width:100%;height:100%;transform:rotate(${t.r.toFixed(2)}deg)${t.fl?' scaleX(-1)':''}`}
+  else im.style.cssText='position:absolute;inset:0';
+  e.appendChild(im);(t.z<.4?SF:SB).appendChild(e);ts.push({k:t.k,r:t.r,fl:t.fl,w,h});return e});
+ BD=mkBD(els);
+ BD.forEach((b,i)=>{b.t=ts[i];b.zr=Math.max(.03,b.z0);b.zf=Math.max(.03,b.zr*.18);if(b.zr-b.zf<.05)b.cv[1]=b.cv[2]=false;
+  if(LIVE){b.e.style.filter=RM?`drop-shadow(4px 8px 5px #000b) blur(${(.35+8.5*Math.pow(b.z0,1.4)).toFixed(1)}px) brightness(${(.72+.38*(1-b.z0)).toFixed(2)})`:flt(b.zr);b.fh=0;b.fq=-1}});
+ if(!LIVE)IMGS.then(()=>{BD.forEach(b=>bakeQ(b,0))})}
 $('',GL,'position:absolute;inset:0;background:radial-gradient(ellipse at 50% 45%,#0000 30%,#000a 100%);pointer-events:none');
 const farW=$('',GL,'position:absolute;left:0;top:0;width:855px;height:547px;transform-origin:0 0;will-change:transform');
 const rn=(a,b)=>a+Math.random()*(b-a),pk2=['#c0392b','#2e7d4f','#e0a82e','#3a6ea5','#999'];
@@ -335,7 +377,7 @@ bl.forEach(a=>mk(a[0],'key b',`left:${(a[1]+1)*12.5-3.6}%;top:0;width:7.2%;heigh
 addEventListener('keydown',e=>{if(e.code=='Space'&&!e.repeat){e.preventDefault();go(!Q.play)}});
 D=PR[0].map(r=>[...r]);roll();rot();
 /* ---- наклон, параллакс и физика предметов под стеклом ---- */
-const FTH=COARSE?3:1.4,PXL=[[deep,1.5],[farW,1.2]];let tx=0,ty=0,gx=0,gy=0;
+let GV=0,GS=16.7,NU=COARSE?5:12,MD=15.5;const FQ=28,PXL=[[deep,1.5],[farW,1.2]];let tx=0,ty=0,gx=0,gy=0;
 const aim=(x,y)=>{x=Math.max(-1,Math.min(1,x));y=Math.max(-1,Math.min(1,y));if(Math.abs(x-tx)+Math.abs(y-ty)>.002)AW=240;tx=x;ty=y};
 addEventListener('pointermove',e=>aim((e.clientX/innerWidth-.5)*2,(e.clientY/innerHeight-.5)*2));
 addEventListener('deviceorientation',e=>{if(e.gamma!=null&&e.beta!=null)aim(e.gamma/25,(e.beta-45)/25)});
@@ -347,12 +389,14 @@ const PF=[[230,6,10],[150,30,40],[70,55,60],[130,35,30],[110,20,25]],rd=()=>Math
 function pulse(g,s=1){if(RM)return;AW=240;const p=PF[g];BD.forEach(b=>{if(!GR[g].includes(b.e.dataset.k))return;const i=1/b.m;
 b.vh+=p[0]*s*Math.pow(i,.7)*(.75+Math.random()*.5);b.vx+=rd()*p[1]*s*i;b.vy+=rd()*p[1]*s*i;b.o+=rd()*p[2]*s*Math.pow(i,.8)})}
 const LS=PXL.map(()=>[0,0,0,0]);
-if(!RM){let t0=performance.now(),bass=0;requestAnimationFrame(function loop(t){if(FR>25&&LK){t0=t;return requestAnimationFrame(loop)}if(t-t0<15.5)return requestAnimationFrame(loop);FR++;if(AW<=0){let e0=0;if(an){for(let i=1;i<9;i++)e0+=fq[i];e0/=2040}if(e0>.08||ACT.length)AW=240;else{t0=t;return requestAnimationFrame(loop)}}AW--;const dt=Math.min(.033,Math.max(.001,(t-t0)/1000));t0=t;
+/* защита от лагов слабых видеокарт: если кадры стабильно долгие — по шагам облегчаем сцену (30 к/с и реже смена фокуса → без гигантов → без самых дальних) */
+function degrade(g){const cut=f=>{BD=BD.filter(b=>f(b)?(b.e.remove(),false):true)};if(g==1){MD=LIVE?31:24;NU=3}else if(g==2)cut(b=>b.z0>.9);else cut(b=>b.z0>.62)}
+if(!RM){let t0=performance.now(),bass=0;requestAnimationFrame(function loop(t){if(FR>25&&LK){t0=t;return requestAnimationFrame(loop)}if(t-t0<MD)return requestAnimationFrame(loop);FR++;if(AW<=0){let e0=0;if(an){for(let i=1;i<9;i++)e0+=fq[i];e0/=2040}if(e0>.08||ACT.length)AW=240;else{t0=t;return requestAnimationFrame(loop)}}AW--;GS+=(Math.min(t-t0,100)-GS)*.04;if(GV<3&&FR>150&&GS>(LIVE?(GV?30:24):(GV?48:38))){GV++;GS=16.7;degrade(GV)}const dt=Math.min(.033,Math.max(.001,(t-t0)/1000));t0=t;
 gx+=(tx-gx)*(1-Math.exp(-dt*2.5));gy+=(ty-gy)*(1-Math.exp(-dt*2.5));
 PXL.forEach(([e,f],i)=>{const s=LS[i],k=34+i*14,c=2*Math.sqrt(k)*.8;s[2]+=(k*(-tx*22*f-s[0])-c*s[2])*dt;s[3]+=(k*(-ty*16*f-s[1])-c*s[3])*dt;s[0]+=s[2]*dt;s[1]+=s[3]*dt;const tf=`translate(${(OX+s[0]).toFixed(2)}px,${(OY+s[1]).toFixed(2)}px) scale(${CS})`;if(tf!==s.tf){s.tf=tf;e.style.transform=tf}});
 let e=0;if(an){for(let i=1;i<9;i++)e+=fq[i];e/=2040}bass+=(e-bass)*.3;const rm=bass*bass;
 const nw=ctx?ctx.currentTime:0;LT.str=LT.wnd=LT.hrp=0;for(let i=ACT.length;i--;){const a=ACT[i];if(a.e<nw-.1){ACT.splice(i,1);continue}if(a.s<=nw+.03&&a.e>nw&&a.w>LT[a.c])LT[a.c]=a.w}
-BD.forEach(b=>{const lt=LT[b.cl]||0;b.L+=(lt-b.L)*(1-Math.exp(-dt*(lt>b.L?7:2.5)));const im=1/b.m,air=b.h>.6,fr=air?.3:2.6;
+let nu=0;BD.forEach((b,bi)=>{const lt=LT[b.cl]||0;b.L+=(lt-b.L)*(1-Math.exp(-dt*(lt>b.L?7:2.5)));const im=1/b.m,air=b.h>.6,fr=air?.3:2.6;
 /* басы динамика трясут корпус */
 if(rm>.01){b.vh+=Math.random()*rm*1400*Math.pow(im,.7)*dt;b.vx+=rd()*rm*900*im*dt;b.vy+=rd()*rm*900*im*dt}
 /* наклон = «гравитация» вдоль платы; лёгкая резинка держит предмет у своего места */
@@ -362,7 +406,8 @@ b.o+=-5*b.a*dt;b.o*=Math.exp(-(air?.4:2.2)*dt);b.a+=b.o*dt;
 b.vh-=520*dt;b.h+=b.vh*dt;if(b.h<0){b.h=0;if(b.vh<-25){b.vh*=-.3;b.o+=rd()*8*im}else b.vh=0}
 const hm=b.z0*40+2;if(b.h>hm){b.h=hm;b.vh*=-.35}
 const f=b.z0*1.1,lg=1-Math.exp(-dt*(3+(1-b.z0)*9));b.px+=(-gx*22*f-b.px)*lg;b.py+=(-gy*16*f-b.py)*lg;const st=b.e.style,tl=`${(b.x+b.px).toFixed(2)}px ${(b.y+b.py).toFixed(2)}px`,ro=b.a.toFixed(2)+'deg',sk=(1+b.h*.0016+b.L*.1).toFixed(4);if(tl!==b.tl){b.tl=tl;st.translate=tl}if(ro!==b.ro){b.ro=ro;b.i.style.rotate=ro}if(sk!==b.sk){b.sk=sk;st.scale=sk}
-const fk=b.h+b.L*40;if(Math.abs(fk-b.fh)>FTH){b.fh=fk;const z=Math.max(.03,b.z0*(1-.82*b.L)-b.h/40);st.filter=flt(z)}});
+if(LIVE){if((bi+FR)%3==0&&nu<NU){const zq=Math.round(Math.max(.03,b.z0*(1-.82*b.L)-b.h/40)*FQ);if(zq!==b.fq){nu++;b.fq=zq;st.filter=flt(zq/FQ)}}}
+else if((bi+FR)%2==0&&b.cv[1]!==false){const z=Math.max(.03,b.z0*(1-.82*b.L)-b.h/40),tq=Math.round(Math.min(1,Math.max(0,(b.zr-z)/(b.zr-b.zf)))*14);if(tq!==b.tq){b.tq=tq;lvl(b,tq/14)}}});
 const vk=(38+tx*14).toFixed(1)+'|'+(3-tx*3).toFixed(1)+'|'+(5-ty*2).toFixed(1);if(vk!==loop.vk){loop.vk=vk;const q=vk.split('|');W.style.setProperty('--gx',q[0]+'%');W.style.setProperty('--lx',q[1]+'px');W.style.setProperty('--ly',q[2]+'px')}requestAnimationFrame(loop)})}
 
 
@@ -372,7 +417,7 @@ const HERO={t:'SubVitro—16',keep:[0,3,8,9,10],big:['S','V','1','6'],tag:'Му�
 const calm=RM;
 const SC2=document.createElement('div');SC2.id='sc';document.body.insertBefore(SC2,O);
 const ST=$('',SC2);ST.id='stg';
-const hd=$('sv-h',ST,'','<div class="sv-t">'+[...HERO.t].map(c=>'<span>'+c+'</span>').join('')+'</div><div class="sv-s"><div class="sv-p">'+HERO.pill+'</div><button class="sv-th" type="button" aria-label="Сменить тему"></button></div>');
+const hd=$('sv-h',ST,'','<div class="sv-t">'+[...HERO.t].map(c=>'<span>'+c+'</span>').join('')+'</div><div class="sv-s"><div class="sv-g2">'+HERO.tag+'</div><div class="sv-p">'+HERO.pill+'</div><button class="sv-th" type="button" aria-label="Сменить тему"></button></div>');
 const ch=[...hd.querySelectorAll('.sv-t span')];
 /* переключатель темы: явный выбор хранится в localStorage; пока его нет — тема устройства */
 {const R=document.documentElement,mq=matchMedia('(prefers-color-scheme:dark)'),tm=[...document.querySelectorAll('meta[name=theme-color]')],bt=hd.querySelector('.sv-th');
@@ -394,22 +439,34 @@ CS=Math.max(sw/855,sh/547)*1.09;OX=(sw-855*CS)/2;OY=(sh-547*CS)/2;[SB,SF].forEac
 W.style.transform=`translate(${vw/2}px,${lr(cy0,cyF,e)}px) rotate(${(3.5*Math.sin(Math.PI*e)).toFixed(2)}deg) scale(${lr(k0,kF,e)}) translate(${-sw/2}px,${-sh/2}px)`;
 const c=sm(cl((p-.2)/.14));ch.forEach((s,i)=>{if(HERO.keep.includes(i)||!s.nw)return;s.style.width=s.nw*(1-c)+'px';s.style.opacity=1-c});
 const T=.88*vh+.14*fs;lt.forEach((s,i)=>{s.style.transform=`translateY(${-T*sm(cl((p-[.02,.06,.1,.14][i])/.34))}px)`});
-const u=sm(cl((p-.35)/.4));LN.style.transform=`translateY(${-u*vh*.4}px)`;LN.style.opacity=1-u;
+const u=sm(cl((p-.35)/.4));LN.style.transform=`translateY(${-u*vh*.4}px)`;LN.style.opacity=hd.firstChild.nextSibling.firstChild.style.opacity=1-u;
 locked=LK=p<.995;W.style.pointerEvents=locked?'none':'';if(calm)hd.style.display=LN.style.display=bg.style.display='none'}
 function calc(force){const w=innerWidth;if(w!==vwL){vwL=w;vhM=0}vhM=Math.max(vhM,innerHeight);const m0=w<640||(w<900&&w/innerHeight<.85);vw=w;vh=m0?vhM:innerHeight;mob=m0;const key=vw+'|'+vh+'|'+mob;if(!force&&key===key0)return;key0=key;
 let kD=Math.min(1.7,(vw-16)/1000,(vh-24)/700);if(kD<.6)kD=Math.min(1.7,(vw-16)/1000);if(!mob&&vh<520)kD=Math.max(.3,Math.min(1.7,(vw-16)/1000,(vh-80)/560));
-const ph=mob?740:560;kF=mob?Math.min(1.3,(vw-16)/440):kD;k0=mob?Math.min(Math.max(.381*vh-39-28,.2*vh)/740,.62*vw/440):.4*kF;cy0=mob?.4805*vh+19.5:.493*vh;cyF=Math.max(vh/2,ph*kF/2+56);
-SH=Math.max(vh,cyF+ph*kF/2+24);RG=calm?1:Math.round(vh*1.35);fs=Math.min(.346*vw,.16*vh);
+const ph=mob?740:560;kF=mob?Math.min(1.3,(vw-16)/440):kD;if(Math.abs(kF-KSC)>.15){KSC=kF;lm=-1}k0=mob?Math.min(Math.max(.381*vh-39-28,.2*vh)/740,.62*vw/440):Math.min(kF,.45*vh/560);cy0=mob?.4805*vh+19.5:.493*vh;cyF=Math.max(vh/2,ph*kF/2+56);
+SH=Math.max(vh,cyF+ph*kF/2+24);RG=calm?1:Math.round(vh*1.35);fs=Math.min(.346*vw,(mob?.16:.7)*vh);
 ST.style.height=SH+'px';SC2.style.height=SH+RG+'px';ST.style.setProperty('--fs',fs+'px');
-rows.forEach((r,i)=>r.style.top=[.29,.478,.671][i]*vh+'px');tag.style.top=.29*vh+11+'px';
-grp.forEach(g=>g.style.top=(.8765*vh-.864*fs)+'px');
+rows.forEach((r,i)=>r.style.top=(mob?[.29,.478,.671]:[.22,.43,.63])[i]*vh+'px');tag.style.top=.29*vh+11+'px';
+grp.forEach(g=>g.style.top=((mob?.8765:.965)*vh-.864*fs)+'px');
 ch.forEach(s=>{s.style.width='';s.nw=s.getBoundingClientRect().width});render(true);requestAnimationFrame(()=>render(true))}
 let tk=0;addEventListener('scroll',()=>{if(!tk)tk=requestAnimationFrame(()=>{tk=0;render()})},{passive:true});
 addEventListener('resize',()=>calc());addEventListener('orientationchange',()=>{setTimeout(()=>calc(),200);setTimeout(()=>calc(),700)});
 /* пока синтезатор не приблизился, клавиши компьютера не играют */
 addEventListener('keydown',e=>{if(locked)e.stopImmediatePropagation()},true);
 document.fonts&&document.fonts.ready.then(()=>calc(1));calc(1)})();
-LD.imgs(Object.values(PH));
+window.BAKED_=LIVE?0:BAKED;LD.imgs(Object.values(PH));
+
+/* ---- плавный скролл колёсиком (мышь/тачпад): страница догоняет цель с инерцией, как на референсе; сенсорные экраны остаются на родном скролле ---- */
+(function(){if(matchMedia('(pointer:coarse)').matches)return;
+const R=document.documentElement;let cur=scrollY,tg=cur,run=0,lt=0;
+const mx=()=>Math.max(0,R.scrollHeight-innerHeight),cl=v=>Math.max(0,Math.min(mx(),v));
+const step=t=>{const dt=Math.min(.05,(t-lt)/1000||.016);lt=t;cur+=(tg-cur)*(1-Math.exp(-dt*7.5));
+ if(Math.abs(tg-cur)<.4){cur=tg;run=0}scrollTo(0,cur);if(run)requestAnimationFrame(step)};
+addEventListener('wheel',e=>{if(e.ctrlKey||e.defaultPrevented||R.classList.contains('ld'))return;e.preventDefault();
+ if(!run){cur=tg=scrollY}const k=e.deltaMode==1?33:e.deltaMode==2?innerHeight:1;tg=cl(tg+e.deltaY*k);
+ if(!run){run=1;lt=performance.now();requestAnimationFrame(step)}},{passive:false});
+/* скролл не от нас (полоса прокрутки, клавиши) — подхватываем текущее положение */
+addEventListener('scroll',()=>{if(Math.abs(scrollY-cur)>2){cur=tg=scrollY;run=0}},{passive:true})})();
 
 
 /* ---- подсказки при наведении (ПК) ---- */
