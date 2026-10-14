@@ -293,13 +293,14 @@ const SC=[[0,3,5,7,10],[0,2,3,5,7,8,10],[0,2,4,5,7,9,11],[0,2,3,5,7,9,10],[0,1,3
 const sem=m=>{const c=SC[Q.sc],n=c.length;return c[(m%n+n)%n]+12*Math.floor(m/n)};
 /* iPhone в беззвучном режиме глушит веб-звук: просим систему считать сайт плеером (iOS 17+),
    а на старых iOS включаем бесшумную петлю <audio> — она переводит звук в «медийный» канал */
+let SIL=null;
 function unmuteIOS(){try{if(navigator.audioSession){navigator.audioSession.type='playback';return}}catch(e){}
  if(!/iP(hone|ad|od)|Macintosh/.test(navigator.userAgent)||!('ontouchend' in document))return;
  const n=800,b=new ArrayBuffer(44+n),v=new DataView(b),w=(o,t)=>[...t].forEach((c,i)=>v.setUint8(o+i,c.charCodeAt(0)));
  w(0,'RIFF');v.setUint32(4,36+n,true);w(8,'WAVEfmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,8000,true);v.setUint32(28,8000,true);v.setUint16(32,1,true);v.setUint16(34,8,true);w(36,'data');v.setUint32(40,n,true);
  for(let i=0;i<n;i++)v.setUint8(44+i,128);
- const a=new Audio(URL.createObjectURL(new Blob([b],{type:'audio/wav'})));a.loop=true;a.setAttribute('playsinline','');a.play().catch(()=>0)}
-function init(){if(ctx)return;unmuteIOS();ctx=new(window.AudioContext||window.webkitAudioContext)();const g=()=>ctx.createGain();
+ const a=SIL=new Audio(URL.createObjectURL(new Blob([b],{type:'audio/wav'})));a.loop=true;a.setAttribute('playsinline','');a.play().catch(()=>0)}
+function init(){if(ctx)return;unmuteIOS();setTimeout(()=>NP(),50);ctx=new(window.AudioContext||window.webkitAudioContext)();const g=()=>ctx.createGain();
 pre=g();shp=ctx.createWaveShaper();shp.oversample=COARSE?'2x':'4x';trem=g();duck=g();db=g();dly=ctx.createDelay(1);fb=g();fb.gain.value=.4;wet=g();mst=g();rvg=g();
 const cp=ctx.createDynamicsCompressor(),lp=ctx.createBiquadFilter(),rv=ctx.createConvolver(),n=ctx.sampleRate*2,ir=ctx.createBuffer(2,n,ctx.sampleRate);lp.frequency.value=3000;
 for(let c=0;c<2;c++){const d=ir.getChannelData(c);for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,3)}rv.buffer=ir;
@@ -367,7 +368,7 @@ const GR=[['acc','ban','hf'],['tr','sxr','sxg'],['hh','clar'],['sxb','harp'],['v
 function tick(s,t){for(let r=0;r<4;r++)if(D[r][s])drum(r,t,s);const m=M[s];if(m!=null)voice(sem(m),t,60/Q.bpm/4*1.8);
 setTimeout(()=>{D.forEach((d,r)=>d[s]&&pulse(r));if(m!=null)pulse(4)},Math.max(0,(t-ctx.currentTime)*1000))}
 function sched(){const sd=60/Q.bpm/4;if(nt<ctx.currentTime-.05)nt=ctx.currentTime+.05;while(nt<ctx.currentTime+.12){const s=Q.step;tick(s,nt+(s%2?Q.sw*sd*.6:0));Q.step=(s+1)%16;nt+=sd}}
-function go(on){Q.play=on;pb.classList.toggle('on',on);clearInterval(tm);if(on){init();ctx.resume();Q.step=0;nt=ctx.currentTime+.06;tm=setInterval(sched,25)}}
+function go(on){Q.play=on;pb.classList.toggle('on',on);clearInterval(tm);if(on){init();ctx.resume();Q.step=0;nt=ctx.currentTime+.06;tm=setInterval(sched,25)}NP()}
 
 /* ---- интерфейс: всё напечатано и закреплено на стекле ---- */
 const R=[],reg=(e,w,n)=>(R.push({e,w,n}),e),bx=(c,w,n,h,st='')=>reg($(c,GL,'position:absolute;'+st,h),w,n);
@@ -416,6 +417,26 @@ rot();
 let svT;const saveSet=()=>{clearTimeout(svT);svT=setTimeout(()=>{try{const o={bpm:Q.bpm,bs};SK.forEach(k=>o[k]=S[k]);localStorage.setItem('sv-set',JSON.stringify(o))}catch(e){}},300)};
 ['pointerup','wheel','keyup'].forEach(n=>addEventListener(n,saveSet,{passive:true}));
 addEventListener('visibilitychange',()=>{if(document.hidden)saveSet()});
+
+/* ---- «Сейчас играет» на экране блокировки и в пункте управления: название, обложка, кнопки ----
+   ▶/❚❚ — пауза и продолжение, ⏮/⏭ — предыдущий и следующий ритм-паттерн */
+const MS=navigator.mediaSession;let npK='';
+/* обложка меняется каждый час: за каждые 6 часов человек видит все 6 обложек, в своём случайном порядке */
+let SVID=0;try{SVID=+localStorage.getItem('sv-id');if(!SVID){SVID=1+Math.floor(Math.random()*1e9);localStorage.setItem('sv-id',SVID)}}catch(e){SVID=7}
+const cvP=c=>{const r=mulberry((SVID*31+c)>>>0),o=[1,2,3,4,5,6];for(let i=5;i>0;i--){const j=r()*(i+1)|0;[o[i],o[j]]=[o[j],o[i]]}return o};
+/* на стыке шестёрок первая обложка нового круга не может совпасть с последней обложкой прошлого */
+function cvr(){const h=Math.floor((Date.now()-new Date().getTimezoneOffset()*6e4)/36e5),c=Math.floor(h/6),o=cvP(c);if(o[0]===cvP(c-1)[5])[o[0],o[1]]=[o[1],o[0]];return o[h%6]}
+function NP(){if(!MS||!window.MediaMetadata||!ctx)return;const CVR=cvr(),k=INS[S.pi].n+'|'+bs+'|'+Q.bpm+'|'+Q.play+'|'+CVR;if(k===npK)return;npK=k;
+ try{MS.metadata=new MediaMetadata({title:'SubVitro—16',artist:INS[S.pi].n+' · '+BN[bs]+' · '+Q.bpm+' BPM',album:'Музыка начинается там, где кончается оркестр',
+  artwork:[{src:`covers/cover-${CVR}-512.jpg`,sizes:'512x512',type:'image/jpeg'},{src:`covers/cover-${CVR}-1024.jpg`,sizes:'1024x1024',type:'image/jpeg'}]});MS.playbackState=ctx.state=='running'?'playing':'paused'}catch(e){}}
+if(MS){let wasPlay=0;const H=(a,f)=>{try{MS.setActionHandler(a,f)}catch(e){}},pat=d=>{bs=(bs+d+4)%4;D=PR[bs].map(r=>[...r]);bb.firstChild.textContent=BN[bs];saveSet();NP()};
+ H('pause',()=>{wasPlay=Q.play;if(Q.play)go(false);for(const k in vs)stop1(k,1);ctx&&ctx.suspend();SIL&&SIL.pause();MS.playbackState='paused'});
+ H('play',()=>{if(!ctx)return;ctx.resume();SIL&&SIL.play().catch(()=>0);if(wasPlay)go(true);MS.playbackState='playing'});
+ H('stop',()=>{if(Q.play)go(false);ctx&&ctx.suspend();MS.playbackState='paused'});
+ H('nexttrack',()=>pat(1));H('previoustrack',()=>pat(-1));
+ ['pointerup','keyup','wheel'].forEach(n=>addEventListener(n,()=>setTimeout(NP,60),{passive:true}));
+ /* раз в минуту проверяем, не начался ли новый час — тогда обложка меняется прямо во время игры */
+ setInterval(NP,6e4)}
 
 /* ---- MIDI-клавиатура (Chrome/Edge на компьютере): при первом нажатии на синтезатор просим доступ; ноты раскладываются от до первой октавы ---- */
 (function(){if(!navigator.requestMIDIAccess||COARSE)return;let asked=0;
